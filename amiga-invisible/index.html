@@ -7,15 +7,14 @@
   <title>Mini‑crafting — Carta de la amiga invisible</title>
   <style>
     :root{
-      --bg:#f0f9ff; --floor:#c8e6c9; --ui:#0f172a;
-      --accent:#1976d2; --ok:#2e7d32; --warn:#c62828;
-      --panelW: min(480px, 96vw);
+      --ui:#0f172a;
+      --panelW:min(480px,96vw);
     }
-    html,body{height:100%;margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    html,body{height:100%;margin:0;background:#f0f9ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
     header{width:var(--panelW);margin:14px auto 10px;display:flex;justify-content:space-between;align-items:center;color:var(--ui)}
     header .stat{display:flex;gap:12px;align-items:center;font-weight:600}
     .badge{padding:6px 10px;border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.07)}
-    canvas{display:block;margin:6px auto;background:linear-gradient(#f0f9ff 70%, var(--floor) 70%);border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);touch-action:none}
+    canvas{display:block;margin:6px auto;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);touch-action:none}
     #panel{width:var(--panelW);margin:10px auto 18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
     .btn{appearance:none;border:none;background:#fff;color:#0f172a;border-radius:12px;padding:8px 12px;box-shadow:0 2px 10px rgba(0,0,0,.1);font-weight:600}
     .btn:active{transform:translateY(1px)}
@@ -57,7 +56,7 @@
       <p>Arrastra las <strong>herramientas y recursos correctos</strong> a la caja de trabajo. Completa la receta antes de que acabe el tiempo. Tienes un <em>Comodín</em> (1 uso).</p>
       <ul style="text-align:left;max-width:480px;margin:10px auto;">
         <li><strong>Movimiento:</strong> toca un ítem y arrástralo. Suéltalo sobre la caja.</li>
-        <li><strong>Recetas:</strong> 3 niveles; cada uno exige 3 ítems (ej.: martillo + clavos + cinta métrica).</li>
+        <li><strong>Recetas:</strong> 3 niveles; cada uno exige 3 ítems.</li>
         <li><strong>Puntuación:</strong> +50 por ítem correcto, +100 por receta completa, combo por rapidez.</li>
       </ul>
       <button class="btn" id="start">▶️ Empezar</button>
@@ -66,7 +65,7 @@
 
 <script>
 (() => {
-  // Canvas & escala
+  /* ====== Canvas y escala ====== */
   const DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -75,7 +74,7 @@
   canvas.style.width = baseW + 'px'; canvas.style.height = baseH + 'px';
   ctx.scale(DPR, DPR);
 
-  // UI
+  /* ====== UI ====== */
   const timeEl = document.getElementById('time');
   const scoreEl = document.getElementById('score');
   const recipeEl = document.getElementById('recipe');
@@ -89,90 +88,114 @@
   const RECORD_KEY = 'crafting_best_amiga';
   bestEl.textContent = +localStorage.getItem(RECORD_KEY) || 0;
 
-  // Mundo
-  const world = { w: baseW, h: baseH, groundY: baseH-60, running:false, paused:false, time:0, duration:75_000 };
-  const box = { x: baseW/2-80, y: world.groundY-110, w: 160, h: 100, slots: [] }; // caja de trabajo
+  /* ====== Paletas por receta (cielo/suelo) ====== */
+  const THEMES = {
+    'Colgar cuadro':   { sky:'#e3f2fd', floor:'#c8e6c9' }, // azul claro + verde
+    'Reparar libro':   { sky:'#fff3e0', floor:'#ffe0b2' }, // crema + melocotón
+    'Pintar esquina':  { sky:'#fce4ec', floor:'#f8bbd0' }  // rosa pastel
+  };
 
-  // Protagonista
-  const hero = { x: baseW/2-28, y: world.groundY-180, w: 56, h: 96, sprite:new Image() };
+  /* ====== Mundo ====== */
+  const world = { w: baseW, h: baseH, groundY: baseH-60, running:false, paused:false, time:0, duration:75_000 };
+  const box = { x: baseW/2-90, y: world.groundY-120, w: 180, h: 110, slots: [] }; // caja más amplia
+
+  /* ====== Protagonista ====== */
+  const hero = { x: baseW/2-28, y: world.groundY-190, w: 56, h: 96, sprite:new Image() };
   hero.sprite.src = 'assets/amiga-invisible.png';
 
-  // Ítems disponibles (dibujados vectorialmente en canvas; estilo plano vibrante)
+  /* ====== Ayuda: cargar imágenes personalizadas ====== */
+  const loadImage = (src) => {
+    if (!src) return null;
+    const img = new Image(); img.src = src; return img;
+  };
+
+  /* ====== Ítems disponibles (vector + imagen opcional) ====== */
+  // 1) Si pones tus propios PNG/SVG en /assets, cambia ICON_IMG_SRC con las rutas.
+  const ICON_IMG_SRC = {
+    // ejemplo: 'martillo':'assets/martillo.png'
+    martillo:null, clavos:null, nivel:null, pegamento:null, clip:null, papel:null, pincel:null, paleta:null, carrocero:null
+  };
+  const ICON_IMG = Object.fromEntries(Object.entries(ICON_IMG_SRC).map(([k,v]) => [k, loadImage(v)]));
+
+  // 2) Fallback vectorial (plano, vibrante) si no hay imagen
   const ITEMS = [
-    { key:'martillo', draw:(x,y,s)=>{ // cabeza
-      ctx.fillStyle='#546e7a'; ctx.fillRect(x-s*0.45,y-s*0.10,s*0.9,s*0.22);
-      // mango
-      ctx.fillStyle='#8d6e63'; ctx.fillRect(x-s*0.06,y+s*0.12,s*0.12,s*0.70);
-    }},
-    { key:'clavos', draw:(x,y,s)=>{ ctx.fillStyle='#37474f';
-      for(let i=0;i<3;i++){ const ox=-s*0.25+i*s*0.25; ctx.fillRect(x+ox,y-s*0.05, s*0.08, s*0.40); ctx.fillRect(x+ox-2,y-s*0.08, s*0.12, s*0.06); }
-    }},
-    { key:'cinta', draw:(x,y,s)=>{ // cinta métrica
-      ctx.fillStyle='#ffca28'; ctx.beginPath(); ctx.arc(x,y,s*0.42,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle='#263238'; ctx.fillRect(x-s*0.1,y-s*0.08,s*0.36,s*0.16);
-    }},
-    { key:'destornillador', draw:(x,y,s)=>{ ctx.fillStyle='#1e88e5'; ctx.fillRect(x-s*0.07,y+s*0.05,s*0.14,s*0.60); ctx.fillStyle='#90a4ae'; ctx.fillRect(x-s*0.04,y-s*0.30,s*0.08,s*0.35); }},
-    { key:'llave', draw:(x,y,s)=>{ // llave fija
-      ctx.fillStyle='#90a4ae'; ctx.beginPath(); ctx.arc(x,y,s*0.18,0,Math.PI*2); ctx.fill();
-      ctx.fillRect(x- s*0.07, y+s*0.18, s*0.14, s*0.50);
-      ctx.beginPath(); ctx.arc(x, y+s*0.72, s*0.10,0,Math.PI*2); ctx.fill();
-    }},
-    { key:'pegamento', draw:(x,y,s)=>{ ctx.fillStyle='#ef5350'; ctx.fillRect(x-s*0.18,y-s*0.10,s*0.36,s*0.46);
-      ctx.fillStyle='#fff'; ctx.fillRect(x-s*0.14,y+s*0.02,s*0.28,s*0.18);
-      ctx.fillStyle='#b71c1c'; ctx.fillRect(x-s*0.06,y-s*0.26,s*0.12,s*0.16); }},
-    { key:'pincel', draw:(x,y,s)=>{ ctx.fillStyle='#8d6e63'; ctx.beginPath(); ctx.moveTo(x-s*0.24,y+s*0.28); ctx.lineTo(x,y-s*0.06); ctx.lineTo(x+s*0.24,y+s*0.28); ctx.closePath(); ctx.fill();
-      ctx.fillStyle='#90caf9'; ctx.fillRect(x-s*0.08,y-s*0.40,s*0.16,s*0.32); }},
-    { key:'paleta', draw:(x,y,s)=>{ ctx.fillStyle='#ffe082'; ctx.beginPath(); ctx.arc(x,y,s*0.40,0,Math.PI*2); ctx.fill();
-      ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x+s*0.20,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
-      ['#ef5350','#66bb6a','#42a5f5','#ab47bc'].forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x- s*0.20 + i*s*0.12, y+s*0.10 - (i%2)*s*0.06, s*0.06,0,Math.PI*2); ctx.fill(); });
-    }},
+    { key:'martillo', draw:(x,y,s)=>{ ctx.fillStyle='#546e7a'; ctx.fillRect(x-s*0.45,y-s*0.10,s*0.9,s*0.22); ctx.fillStyle='#8d6e63'; ctx.fillRect(x-s*0.06,y+s*0.12,s*0.12,s*0.70); }},
+    { key:'clavos', draw:(x,y,s)=>{ ctx.fillStyle='#37474f'; for(let i=0;i<3;i++){ const ox=-s*0.25+i*s*0.25; ctx.fillRect(x+ox,y-s*0.05, s*0.08, s*0.40); ctx.fillRect(x+ox-2,y-s*0.08, s*0.12, s*0.06); } }},
+    { key:'nivel', draw:(x,y,s)=>{ ctx.fillStyle='#43a047'; ctx.fillRect(x-s*0.40,y-s*0.12,s*0.80,s*0.24); ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.fillRect(x-s*0.30,y-s*0.06,s*0.60,s*0.12); ctx.fillStyle='#ffeb3b'; ctx.beginPath(); ctx.arc(x, y, s*0.04, 0, Math.PI*2); ctx.fill(); }},
+    { key:'papel', draw:(x,y,s)=>{ ctx.fillStyle='#eceff1'; roundRectPath(x-s*0.28,y-s*0.34,s*0.56,s*0.68,10); ctx.fill(); ctx.fillStyle='#b0bec5'; ctx.fillRect(x-s*0.20, y-s*0.20, s*0.40, s*0.04); ctx.fillRect(x-s*0.20, y-s*0.10, s*0.36, s*0.04); ctx.fillRect(x-s*0.20, y, s*0.28, s*0.04); }},
+    { key:'carrocero', draw:(x,y,s)=>{ ctx.fillStyle='#ffd54f'; ctx.beginPath(); ctx.arc(x,y,s*0.24,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ctx.fillStyle='#ffca28'; ctx.fillRect(x+s*0.12, y-s*0.02, s*0.22, s*0.08); }},
+    { key:'pegamento', draw:(x,y,s)=>{ ctx.fillStyle='#ef5350'; ctx.fillRect(x-s*0.18,y-s*0.10,s*0.36,s*0.46); ctx.fillStyle='#fff'; ctx.fillRect(x-s*0.14,y+s*0.02,s*0.28,s*0.18); ctx.fillStyle='#b71c1c'; ctx.fillRect(x-s*0.06,y-s*0.26,s*0.12,s*0.16); }},
+    { key:'pincel', draw:(x,y,s)=>{ ctx.fillStyle='#8d6e63'; ctx.beginPath(); ctx.moveTo(x-s*0.24,y+s*0.28); ctx.lineTo(x,y-s*0.06); ctx.lineTo(x+s*0.24,y+s*0.28); ctx.closePath(); ctx.fill(); ctx.fillStyle='#90caf9'; ctx.fillRect(x-s*0.08,y-s*0.40,s*0.16,s*0.32); }},
+    { key:'paleta', draw:(x,y,s)=>{ ctx.fillStyle:'#ffe082'; ctx.beginPath(); ctx.arc(x,y,s*0.40,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x+s*0.20,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ['#ef5350','#66bb6a','#42a5f5','#ab47bc'].forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x- s*0.20 + i*s*0.12, y+s*0.10 - (i%2)*s*0.06, s*0.06,0,Math.PI*2); ctx.fill(); }); }},
+    { key:'clip', draw:(x,y,s)=>{ ctx.strokeStyle='#546e7a'; ctx.lineWidth = Math.max(2, s*0.12); ctx.beginPath(); ctx.moveTo(x-s*0.14,y-s*0.02); ctx.quadraticCurveTo(x+s*0.20,y-s*0.10, x+s*0.12,y+s*0.28); ctx.quadraticCurveTo(x,y+s*0.40, x-s*0.10,y+s*0.18); ctx.stroke(); } }
   ];
 
-  // Recetas (3 niveles, 3 ítems cada uno)
+  // Función de dibujo que usa imagen si existe
+  function drawItemWithImageOrVector(key, cx, cy, s){
+    const img = ICON_IMG[key];
+    if (img && img.complete) { // dibuja imagen centrada
+      ctx.drawImage(img, cx - s*0.5, cy - s*0.5, s, s);
+    } else {
+      const def = ITEMS.find(i => i.key === key);
+      def?.draw(cx, cy, s);
+    }
+  }
+
+  /* ====== Recetas ====== */
   const RECIPES = [
-    { name:'Colgar cuadro', need:['martillo','clavos','cinta'] },
-    { name:'Reparar libro',  need:['pegamento','clip','destornillador'] }, // si no hay clip en ITEMS, lo resolvemos dibujándolo inline
-    { name:'Pintar esquina', need:['pincel','paleta','cinta'] }
+    { name:'Colgar cuadro', need:['martillo','clavos','nivel'] },
+    { name:'Reparar libro',  need:['pegamento','clip','papel'] },
+    { name:'Pintar esquina', need:['pincel','paleta','carrocero'] }
   ];
-  // Añadimos clip como ítem dibujado inline
-  ITEMS.push({ key:'clip', draw:(x,y,s)=>{ ctx.fillStyle='#546e7a';
-    ctx.lineWidth = Math.max(2, s*0.12); ctx.beginPath(); ctx.moveTo(x-s*0.14,y-s*0.02);
-    ctx.quadraticCurveTo(x+s*0.20,y-s*0.10, x+s*0.12,y+s*0.28);
-    ctx.quadraticCurveTo(x,y+s*0.40, x-s*0.10,y+s*0.18);
-    ctx.stroke(); } });
 
-  // Estado
-  let score=0, combo=1, comboTimer=0, level=0, currentRecipe=null, powerUsed=false;
+  /* Etiquetas visibles (más claras) */
+  const DISPLAY = {
+    martillo:'Martillo', clavos:'Clavos', nivel:'Nivel de burbuja',
+    pegamento:'Pegamento', clip:'Clip', papel:'Hoja de papel',
+    pincel:'Pincel', paleta:'Paleta', carrocero:'Cinta de carrocero'
+  };
 
-  // Ítems arrastrables en la mesa
+  /* ====== Estado ====== */
+  let score=0, combo=1, comboTimer=0, level=0, currentRecipe=null;
+
+  /* ====== Bancada: ítems arrastrables ====== */
   const bench = { items:[] };
   function spawnBenchFor(recipe){
     bench.items = [];
-    // Añade la receta y 2 distractores aleatorios
     const need = recipe.need.slice();
     const pool = ITEMS.map(it=>it.key);
-    while(bench.items.length < 6){ // 3 necesarios + 3 distractores
+
+    // 3 necesarios + 3 distractores (sin duplicar excesivo)
+    while(bench.items.length < 6){
       const k = bench.items.length < need.length ? need[bench.items.length] : pool[Math.floor(Math.random()*pool.length)];
-      const def = ITEMS.find(it=>it.key===k);
-      if (!def) continue;
+      const countK = bench.items.filter(i=>i.key===k).length;
+      if (countK > 1 && !need.includes(k)) continue;
+
       bench.items.push({
-        key:def.key, draw:def.draw,
+        key: k,
         x: 60 + (bench.items.length%3)*100,
-        y: 120 + Math.floor(bench.items.length/3)*110,
-        s: 44,
+        y: 120 + Math.floor(bench.items.length/3)*115,
+        s: 48,
         dragging:false, dx:0, dy:0, placed:false
       });
     }
   }
 
-  // Slots de la caja (3)
+  /* ====== Slots de la caja (más separados y con “píldora” de texto) ====== */
   function buildSlots(recipe){
+    const spacing = 70;              // antes 40 → más separación
+    const slotW = 46, slotH = 46;    // slot un poco mayor
     box.slots = recipe.need.map((key,i)=>({
-      key, x: box.x + 20 + i*40, y: box.y + 20, w: 40, h: 40, filled:false
+      key,
+      x: box.x + 18 + i*spacing,
+      y: box.y + 18,
+      w: slotW,
+      h: slotH,
+      filled:false
     }));
   }
 
-  // HUD
+  /* ====== HUD ====== */
   function updateHUD(){
     scoreEl.textContent = score;
     recipeEl.textContent = currentRecipe ? currentRecipe.name : '—';
@@ -180,9 +203,9 @@
     timeEl.textContent = String(Math.floor(remain/60)).padStart(2,'0') + ':' + String(remain%60).padStart(2,'0');
   }
 
-  // Juego
+  /* ====== Juego ====== */
   function startGame(){
-    score=0; combo=1; comboTimer=0; level=0; powerUsed=false; world.time=0;
+    score=0; combo=1; comboTimer=0; level=0; world.time=0;
     currentRecipe = RECIPES[level];
     spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
     world.running=true; world.paused=false;
@@ -205,7 +228,7 @@
     overlay.style.display='flex';
   }
 
-  // Update & draw
+  /* ====== Update & Draw ====== */
   function update(dt){
     if (world.paused) return;
     world.time += dt;
@@ -218,10 +241,11 @@
   function draw(){
     ctx.clearRect(0,0,world.w, world.h);
 
-    // Decorado simple (taller)
+    // Fondo según la receta
+    const theme = THEMES[currentRecipe?.name] || { sky:'#bbdefb', floor:'#a5d6a7' };
     ctx.save();
-    ctx.fillStyle='#bbdefb'; ctx.fillRect(0,0,world.w, world.h*0.70);
-    ctx.fillStyle= '#a5d6a7'; ctx.fillRect(0,world.h*0.70, world.w, world.h*0.30);
+    ctx.fillStyle = theme.sky;   ctx.fillRect(0,0,world.w, world.h*0.70);
+    ctx.fillStyle = theme.floor; ctx.fillRect(0,world.h*0.70, world.w, world.h*0.30);
     ctx.restore();
 
     // Protagonista
@@ -229,28 +253,44 @@
 
     // Caja
     ctx.fillStyle='#8d6e63'; roundRect(box.x, box.y, box.w, box.h, 12, true);
-    ctx.fillStyle='#6d4c41'; roundRect(box.x+8, box.y+54, box.w-16, 16, 8, true); // borde
-    // Dibujar slots
+    ctx.fillStyle='#6d4c41'; roundRect(box.x+8, box.y+64, box.w-16, 18, 8, true);
+
+    // Slots + etiquetas más legibles (píldora)
     box.slots.forEach(sl=>{
       ctx.fillStyle= sl.filled ? '#81c784' : '#ffffff';
       roundRect(sl.x, sl.y, sl.w, sl.h, 8, true);
-      // etiqueta del slot (nombre)
-      ctx.fillStyle='#263238';
-      ctx.font='bold 11px system-ui';
-      ctx.fillText(sl.key, sl.x-4, sl.y+sl.h+12);
+
+      // etiqueta debajo (separación mayor + fondo)
+      const label = DISPLAY[sl.key] || sl.key;
+      const padX = 8, padY = 6;
+      ctx.font = 'bold 12px system-ui';
+      const textW = ctx.measureText(label).width;
+      const pillW = Math.max(textW + padX*2, sl.w + 16);
+      const pillH = 22;
+      const pillX = sl.x + sl.w/2 - pillW/2;
+      const pillY = sl.y + sl.h + 24;
+
+      // fondo de etiqueta
+      ctx.fillStyle = '#ffffff';
+      roundRect(pillX, pillY, pillW, pillH, 12, true);
+      ctx.strokeStyle = 'rgba(0,0,0,.08)'; ctx.stroke();
+
+      // texto centrado
+      ctx.fillStyle = '#263238';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, pillX + pillW/2 - textW/2, pillY + pillH/2);
     });
 
     // Bancada
     ctx.fillStyle='#b0bec5'; roundRect(20, 90, world.w-40, 10, 6, true);
 
-    // Ítems
+    // Ítems (imagen personalizada si existe; si no, vector)
     bench.items.forEach(it=>{
       if (it.placed) return;
       const cx = it.x + (it.dragging ? it.dx : 0);
       const cy = it.y + (it.dragging ? it.dy : 0);
-      // base redonda de apoyo
       ctx.fillStyle='rgba(0,0,0,.06)'; ctx.beginPath(); ctx.arc(cx, cy+it.s*0.56, it.s*0.36, 0, Math.PI*2); ctx.fill();
-      it.draw(cx, cy, it.s);
+      drawItemWithImageOrVector(it.key, cx, cy, it.s);
     });
 
     // HUD dentro del canvas (tiempo restante pequeño)
@@ -269,7 +309,7 @@
     requestAnimationFrame(loop);
   }
 
-  // Utilidades dibujo
+  /* ====== Utilidades de dibujo ====== */
   function roundRect(x,y,w,h,r, fill){
     ctx.beginPath();
     ctx.moveTo(x+r,y);
@@ -279,8 +319,16 @@
     ctx.arcTo(x,y,x+w,y,r);
     if (fill) ctx.fill(); else ctx.stroke();
   }
+  function roundRectPath(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+  }
 
-  // Drag & drop (pointer events)
+  /* ====== Drag & drop ====== */
   let dragging=null;
   function pickItemAt(px,py){
     for(let i=bench.items.length-1;i>=0;i--){
@@ -312,7 +360,6 @@
   }
   function onPointerUp(){
     if (!dragging) return;
-    // comprobar drop sobre slot compatible
     const dropX = dragging.x + dragging.dx, dropY = dragging.y + dragging.dy;
     let placed=false;
     for (const sl of box.slots){
@@ -322,10 +369,8 @@
           sl.filled=true; dragging.placed=true; placed=true;
           const gained = Math.floor(50 * combo);
           score += gained; combo = Math.min(5, combo+1); comboTimer = 1600;
-          // si completamos receta:
           if (box.slots.every(s=>s.filled)){
             score += 100 * combo; combo = Math.min(5, combo+1); comboTimer = 1600;
-            // siguiente nivel
             level++;
             if (level >= RECIPES.length) { return endGame(true); }
             currentRecipe = RECIPES[level];
@@ -335,7 +380,6 @@
         break;
       }
     }
-    // si no se colocó, vuelve
     if (!placed){ dragging.dx=0; dragging.dy=0; }
     dragging.dragging=false; dragging=null;
   }
@@ -346,19 +390,17 @@
   canvas.addEventListener('touchmove', onPointerMove, {passive:false});
   window.addEventListener('touchend', onPointerUp);
 
-  // Pausa y reinicio
+  /* ====== Pausa y reinicio ====== */
   pauseBtn.addEventListener('click', ()=>{ if (!world.running) return; world.paused=!world.paused; pauseBtn.textContent = world.paused? '▶️ Reanudar':'⏸️ Pausa'; });
   restartBtn.addEventListener('click', ()=>{ world.running=false; overlay.style.display='flex'; });
 
-  // Comodín (1 uso): rellena el primer slot que falte, colocando su ítem automáticamente en la caja
+  /* ====== Comodín ====== */
   powerBtn.addEventListener('click', ()=>{
     if (!world.running || world.paused || powerBtn.disabled) return;
     const sl = box.slots.find(s=>!s.filled);
     if (!sl) return;
     powerBtn.disabled=true;
-    powerUsed=true;
     sl.filled=true;
-    // marca como colocado un ítem igual del banco si existe
     const it = bench.items.find(i=>!i.placed && i.key===sl.key);
     if (it) it.placed=true;
     score += Math.floor(50 * combo);
@@ -372,7 +414,7 @@
     }
   });
 
-  // Inicio
+  /* ====== Inicio ====== */
   overlay.style.display='flex';
   startBtn.addEventListener('click', startGame);
 
