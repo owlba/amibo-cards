@@ -1,0 +1,382 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+  <title>Mini‑crafting — Carta de la amiga invisible</title>
+  <style>
+    :root{
+      --bg:#f0f9ff; --floor:#c8e6c9; --ui:#0f172a;
+      --accent:#1976d2; --ok:#2e7d32; --warn:#c62828;
+      --panelW: min(480px, 96vw);
+    }
+    html,body{height:100%;margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    header{width:var(--panelW);margin:14px auto 10px;display:flex;justify-content:space-between;align-items:center;color:var(--ui)}
+    header .stat{display:flex;gap:12px;align-items:center;font-weight:600}
+    .badge{padding:6px 10px;border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.07)}
+    canvas{display:block;margin:6px auto;background:linear-gradient(#f0f9ff 70%, var(--floor) 70%);border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);touch-action:none}
+    #panel{width:var(--panelW);margin:10px auto 18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+    .btn{appearance:none;border:none;background:#fff;color:#0f172a;border-radius:12px;padding:8px 12px;box-shadow:0 2px 10px rgba(0,0,0,.1);font-weight:600}
+    .btn:active{transform:translateY(1px)}
+    #power{background:linear-gradient(180deg,#ffe082,#ffd54f)}
+    #power[disabled]{filter:grayscale(.8);opacity:.7}
+    footer{width:var(--panelW);margin:6px auto 22px;color:#3c4a4a;font-size:.92rem;text-align:center}
+    #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
+    #overlay .card{width:min(520px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
+    @media (max-width:420px){ header{font-size:14px} }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="stat">
+      <span class="badge">⌛ <strong id="time">00:00</strong></span>
+      <span class="badge">🎯 Puntos: <strong id="score">0</strong></span>
+      <span class="badge">🧰 Receta: <strong id="recipe">—</strong></span>
+    </div>
+    <div class="stat">
+      <span class="badge">🏆 Récord: <strong id="best">0</strong></span>
+      <button class="btn" id="pause">⏸️ Pausa</button>
+    </div>
+  </header>
+
+  <canvas id="game" width="360" height="640" aria-label="Mini-crafting"></canvas>
+
+  <div id="panel">
+    <button class="btn" id="power" title="Comodín (coloca un ítem que falte) — 1 uso">🃏 Comodín</button>
+    <button class="btn" id="restart">🔄 Reiniciar</button>
+  </div>
+
+  <footer>
+    Carta: <strong>amiga invisible</strong>
+  </footer>
+
+  <div id="overlay" role="dialog" aria-modal="true">
+    <div class="card">
+      <h2>Mini‑crafting</h2>
+      <p>Arrastra las <strong>herramientas y recursos correctos</strong> a la caja de trabajo. Completa la receta antes de que acabe el tiempo. Tienes un <em>Comodín</em> (1 uso).</p>
+      <ul style="text-align:left;max-width:480px;margin:10px auto;">
+        <li><strong>Movimiento:</strong> toca un ítem y arrástralo. Suéltalo sobre la caja.</li>
+        <li><strong>Recetas:</strong> 3 niveles; cada uno exige 3 ítems (ej.: martillo + clavos + cinta métrica).</li>
+        <li><strong>Puntuación:</strong> +50 por ítem correcto, +100 por receta completa, combo por rapidez.</li>
+      </ul>
+      <button class="btn" id="start">▶️ Empezar</button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // Canvas & escala
+  const DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const baseW = canvas.width, baseH = canvas.height;
+  canvas.width = baseW * DPR; canvas.height = baseH * DPR;
+  canvas.style.width = baseW + 'px'; canvas.style.height = baseH + 'px';
+  ctx.scale(DPR, DPR);
+
+  // UI
+  const timeEl = document.getElementById('time');
+  const scoreEl = document.getElementById('score');
+  const recipeEl = document.getElementById('recipe');
+  const bestEl = document.getElementById('best');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('start');
+  const pauseBtn = document.getElementById('pause');
+  const restartBtn = document.getElementById('restart');
+  const powerBtn = document.getElementById('power');
+
+  const RECORD_KEY = 'crafting_best_amiga';
+  bestEl.textContent = +localStorage.getItem(RECORD_KEY) || 0;
+
+  // Mundo
+  const world = { w: baseW, h: baseH, groundY: baseH-60, running:false, paused:false, time:0, duration:75_000 };
+  const box = { x: baseW/2-80, y: world.groundY-110, w: 160, h: 100, slots: [] }; // caja de trabajo
+
+  // Protagonista
+  const hero = { x: baseW/2-28, y: world.groundY-180, w: 56, h: 96, sprite:new Image() };
+  hero.sprite.src = 'assets/amiga-invisible.png';
+
+  // Ítems disponibles (dibujados vectorialmente en canvas; estilo plano vibrante)
+  const ITEMS = [
+    { key:'martillo', draw:(x,y,s)=>{ // cabeza
+      ctx.fillStyle='#546e7a'; ctx.fillRect(x-s*0.45,y-s*0.10,s*0.9,s*0.22);
+      // mango
+      ctx.fillStyle='#8d6e63'; ctx.fillRect(x-s*0.06,y+s*0.12,s*0.12,s*0.70);
+    }},
+    { key:'clavos', draw:(x,y,s)=>{ ctx.fillStyle='#37474f';
+      for(let i=0;i<3;i++){ const ox=-s*0.25+i*s*0.25; ctx.fillRect(x+ox,y-s*0.05, s*0.08, s*0.40); ctx.fillRect(x+ox-2,y-s*0.08, s*0.12, s*0.06); }
+    }},
+    { key:'cinta', draw:(x,y,s)=>{ // cinta métrica
+      ctx.fillStyle='#ffca28'; ctx.beginPath(); ctx.arc(x,y,s*0.42,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#263238'; ctx.fillRect(x-s*0.1,y-s*0.08,s*0.36,s*0.16);
+    }},
+    { key:'destornillador', draw:(x,y,s)=>{ ctx.fillStyle='#1e88e5'; ctx.fillRect(x-s*0.07,y+s*0.05,s*0.14,s*0.60); ctx.fillStyle='#90a4ae'; ctx.fillRect(x-s*0.04,y-s*0.30,s*0.08,s*0.35); }},
+    { key:'llave', draw:(x,y,s)=>{ // llave fija
+      ctx.fillStyle='#90a4ae'; ctx.beginPath(); ctx.arc(x,y,s*0.18,0,Math.PI*2); ctx.fill();
+      ctx.fillRect(x- s*0.07, y+s*0.18, s*0.14, s*0.50);
+      ctx.beginPath(); ctx.arc(x, y+s*0.72, s*0.10,0,Math.PI*2); ctx.fill();
+    }},
+    { key:'pegamento', draw:(x,y,s)=>{ ctx.fillStyle='#ef5350'; ctx.fillRect(x-s*0.18,y-s*0.10,s*0.36,s*0.46);
+      ctx.fillStyle='#fff'; ctx.fillRect(x-s*0.14,y+s*0.02,s*0.28,s*0.18);
+      ctx.fillStyle='#b71c1c'; ctx.fillRect(x-s*0.06,y-s*0.26,s*0.12,s*0.16); }},
+    { key:'pincel', draw:(x,y,s)=>{ ctx.fillStyle='#8d6e63'; ctx.beginPath(); ctx.moveTo(x-s*0.24,y+s*0.28); ctx.lineTo(x,y-s*0.06); ctx.lineTo(x+s*0.24,y+s*0.28); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#90caf9'; ctx.fillRect(x-s*0.08,y-s*0.40,s*0.16,s*0.32); }},
+    { key:'paleta', draw:(x,y,s)=>{ ctx.fillStyle='#ffe082'; ctx.beginPath(); ctx.arc(x,y,s*0.40,0,Math.PI*2); ctx.fill();
+      ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x+s*0.20,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
+      ['#ef5350','#66bb6a','#42a5f5','#ab47bc'].forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x- s*0.20 + i*s*0.12, y+s*0.10 - (i%2)*s*0.06, s*0.06,0,Math.PI*2); ctx.fill(); });
+    }},
+  ];
+
+  // Recetas (3 niveles, 3 ítems cada uno)
+  const RECIPES = [
+    { name:'Colgar cuadro', need:['martillo','clavos','cinta'] },
+    { name:'Reparar libro',  need:['pegamento','clip','destornillador'] }, // si no hay clip en ITEMS, lo resolvemos dibujándolo inline
+    { name:'Pintar esquina', need:['pincel','paleta','cinta'] }
+  ];
+  // Añadimos clip como ítem dibujado inline
+  ITEMS.push({ key:'clip', draw:(x,y,s)=>{ ctx.fillStyle='#546e7a';
+    ctx.lineWidth = Math.max(2, s*0.12); ctx.beginPath(); ctx.moveTo(x-s*0.14,y-s*0.02);
+    ctx.quadraticCurveTo(x+s*0.20,y-s*0.10, x+s*0.12,y+s*0.28);
+    ctx.quadraticCurveTo(x,y+s*0.40, x-s*0.10,y+s*0.18);
+    ctx.stroke(); } });
+
+  // Estado
+  let score=0, combo=1, comboTimer=0, level=0, currentRecipe=null, powerUsed=false;
+
+  // Ítems arrastrables en la mesa
+  const bench = { items:[] };
+  function spawnBenchFor(recipe){
+    bench.items = [];
+    // Añade la receta y 2 distractores aleatorios
+    const need = recipe.need.slice();
+    const pool = ITEMS.map(it=>it.key);
+    while(bench.items.length < 6){ // 3 necesarios + 3 distractores
+      const k = bench.items.length < need.length ? need[bench.items.length] : pool[Math.floor(Math.random()*pool.length)];
+      const def = ITEMS.find(it=>it.key===k);
+      if (!def) continue;
+      bench.items.push({
+        key:def.key, draw:def.draw,
+        x: 60 + (bench.items.length%3)*100,
+        y: 120 + Math.floor(bench.items.length/3)*110,
+        s: 44,
+        dragging:false, dx:0, dy:0, placed:false
+      });
+    }
+  }
+
+  // Slots de la caja (3)
+  function buildSlots(recipe){
+    box.slots = recipe.need.map((key,i)=>({
+      key, x: box.x + 20 + i*40, y: box.y + 20, w: 40, h: 40, filled:false
+    }));
+  }
+
+  // HUD
+  function updateHUD(){
+    scoreEl.textContent = score;
+    recipeEl.textContent = currentRecipe ? currentRecipe.name : '—';
+    const remain = Math.max(0, Math.ceil((world.duration - world.time)/1000));
+    timeEl.textContent = String(Math.floor(remain/60)).padStart(2,'0') + ':' + String(remain%60).padStart(2,'0');
+  }
+
+  // Juego
+  function startGame(){
+    score=0; combo=1; comboTimer=0; level=0; powerUsed=false; world.time=0;
+    currentRecipe = RECIPES[level];
+    spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
+    world.running=true; world.paused=false;
+    overlay.style.display='none';
+    powerBtn.disabled=false; pauseBtn.textContent='⏸️ Pausa';
+    loop(performance.now());
+  }
+
+  function endGame(win){
+    world.running=false;
+    const best = +localStorage.getItem(RECORD_KEY) || 0;
+    localStorage.setItem(RECORD_KEY, Math.max(best, score));
+    bestEl.textContent = localStorage.getItem(RECORD_KEY);
+    document.getElementById('start').textContent = '▶️ Repetir';
+    const title = win ? '¡Recetas completadas!' : 'Se acabó el tiempo';
+    document.querySelector('#overlay .card h2').textContent = title;
+    document.querySelector('#overlay .card p').innerHTML =
+      `Puntos: <strong>${score}</strong> · Récord: <strong>${bestEl.textContent}</strong><br>`+
+      `Receta actual: <strong>${currentRecipe?.name||'—'}</strong>`;
+    overlay.style.display='flex';
+  }
+
+  // Update & draw
+  function update(dt){
+    if (world.paused) return;
+    world.time += dt;
+    if (world.time >= world.duration) return endGame(false);
+
+    // Combo
+    if (comboTimer>0){ comboTimer -= dt; if (comboTimer<=0){ comboTimer=0; combo=1; } }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,world.w, world.h);
+
+    // Decorado simple (taller)
+    ctx.save();
+    ctx.fillStyle='#bbdefb'; ctx.fillRect(0,0,world.w, world.h*0.70);
+    ctx.fillStyle= '#a5d6a7'; ctx.fillRect(0,world.h*0.70, world.w, world.h*0.30);
+    ctx.restore();
+
+    // Protagonista
+    ctx.drawImage(hero.sprite, hero.x, hero.y, hero.w, hero.h);
+
+    // Caja
+    ctx.fillStyle='#8d6e63'; roundRect(box.x, box.y, box.w, box.h, 12, true);
+    ctx.fillStyle='#6d4c41'; roundRect(box.x+8, box.y+54, box.w-16, 16, 8, true); // borde
+    // Dibujar slots
+    box.slots.forEach(sl=>{
+      ctx.fillStyle= sl.filled ? '#81c784' : '#ffffff';
+      roundRect(sl.x, sl.y, sl.w, sl.h, 8, true);
+      // etiqueta del slot (nombre)
+      ctx.fillStyle='#263238';
+      ctx.font='bold 11px system-ui';
+      ctx.fillText(sl.key, sl.x-4, sl.y+sl.h+12);
+    });
+
+    // Bancada
+    ctx.fillStyle='#b0bec5'; roundRect(20, 90, world.w-40, 10, 6, true);
+
+    // Ítems
+    bench.items.forEach(it=>{
+      if (it.placed) return;
+      const cx = it.x + (it.dragging ? it.dx : 0);
+      const cy = it.y + (it.dragging ? it.dy : 0);
+      // base redonda de apoyo
+      ctx.fillStyle='rgba(0,0,0,.06)'; ctx.beginPath(); ctx.arc(cx, cy+it.s*0.56, it.s*0.36, 0, Math.PI*2); ctx.fill();
+      it.draw(cx, cy, it.s);
+    });
+
+    // HUD dentro del canvas (tiempo restante pequeño)
+    ctx.fillStyle='rgba(0,0,0,.25)'; roundRect(12, 12, 110, 28, 8, true);
+    ctx.fillStyle='#fff'; ctx.font='bold 14px system-ui';
+    const remain = Math.max(0, Math.ceil((world.duration - world.time)/1000));
+    ctx.fillText(`⏱ ${remain}s`, 20, 31);
+  }
+
+  function loop(ts){
+    if (!world.running) return;
+    const dt = Math.min(32, ts - (loop._last || ts)); loop._last = ts;
+    update(dt);
+    updateHUD();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // Utilidades dibujo
+  function roundRect(x,y,w,h,r, fill){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    if (fill) ctx.fill(); else ctx.stroke();
+  }
+
+  // Drag & drop (pointer events)
+  let dragging=null;
+  function pickItemAt(px,py){
+    for(let i=bench.items.length-1;i>=0;i--){
+      const it = bench.items[i];
+      if (it.placed) continue;
+      const cx = it.x + (it.dragging ? it.dx : 0);
+      const cy = it.y + (it.dragging ? it.dy : 0);
+      if (px>cx-30 && px<cx+30 && py>cy-30 && py<cy+30){
+        return it;
+      }
+    }
+    return null;
+  }
+  function onPointerDown(ev){
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.touches? ev.touches[0].clientX: ev.clientX) - rect.left;
+    const y = (ev.touches? ev.touches[0].clientY: ev.clientY) - rect.top;
+    dragging = pickItemAt(x,y);
+    if (dragging){ dragging.dragging=true; dragging.dx=0; dragging.dy=0; }
+  }
+  function onPointerMove(ev){
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.touches? ev.touches[0].clientX: ev.clientX) - rect.left;
+    const y = (ev.touches? ev.touches[0].clientY: ev.clientY) - rect.top;
+    dragging.dx = x - dragging.x;
+    dragging.dy = y - dragging.y;
+    ev.preventDefault();
+  }
+  function onPointerUp(){
+    if (!dragging) return;
+    // comprobar drop sobre slot compatible
+    const dropX = dragging.x + dragging.dx, dropY = dragging.y + dragging.dy;
+    let placed=false;
+    for (const sl of box.slots){
+      if (sl.filled) continue;
+      if (dropX>sl.x && dropX<sl.x+sl.w && dropY>sl.y && dropY<sl.y+sl.h){
+        if (dragging.key === sl.key){
+          sl.filled=true; dragging.placed=true; placed=true;
+          const gained = Math.floor(50 * combo);
+          score += gained; combo = Math.min(5, combo+1); comboTimer = 1600;
+          // si completamos receta:
+          if (box.slots.every(s=>s.filled)){
+            score += 100 * combo; combo = Math.min(5, combo+1); comboTimer = 1600;
+            // siguiente nivel
+            level++;
+            if (level >= RECIPES.length) { return endGame(true); }
+            currentRecipe = RECIPES[level];
+            spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
+          }
+        }
+        break;
+      }
+    }
+    // si no se colocó, vuelve
+    if (!placed){ dragging.dx=0; dragging.dy=0; }
+    dragging.dragging=false; dragging=null;
+  }
+  canvas.addEventListener('mousedown', onPointerDown);
+  canvas.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+  canvas.addEventListener('touchstart', onPointerDown, {passive:false});
+  canvas.addEventListener('touchmove', onPointerMove, {passive:false});
+  window.addEventListener('touchend', onPointerUp);
+
+  // Pausa y reinicio
+  pauseBtn.addEventListener('click', ()=>{ if (!world.running) return; world.paused=!world.paused; pauseBtn.textContent = world.paused? '▶️ Reanudar':'⏸️ Pausa'; });
+  restartBtn.addEventListener('click', ()=>{ world.running=false; overlay.style.display='flex'; });
+
+  // Comodín (1 uso): rellena el primer slot que falte, colocando su ítem automáticamente en la caja
+  powerBtn.addEventListener('click', ()=>{
+    if (!world.running || world.paused || powerBtn.disabled) return;
+    const sl = box.slots.find(s=>!s.filled);
+    if (!sl) return;
+    powerBtn.disabled=true;
+    powerUsed=true;
+    sl.filled=true;
+    // marca como colocado un ítem igual del banco si existe
+    const it = bench.items.find(i=>!i.placed && i.key===sl.key);
+    if (it) it.placed=true;
+    score += Math.floor(50 * combo);
+    combo = Math.min(5, combo+1); comboTimer = 1600;
+    if (box.slots.every(s=>s.filled)){
+      score += 100 * combo; combo = Math.min(5, combo+1); comboTimer = 1600;
+      level++;
+      if (level >= RECIPES.length) { return endGame(true); }
+      currentRecipe = RECIPES[level];
+      spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
+    }
+  });
+
+  // Inicio
+  overlay.style.display='flex';
+  startBtn.addEventListener('click', startGame);
+
+})();
+</script>
+</body>
+</html>

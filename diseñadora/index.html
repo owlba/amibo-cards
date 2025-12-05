@@ -1,0 +1,208 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+  <title>Memory Arts & Crafts — Carta de la diseñadora</title>
+  <style>
+    :root{
+      --bg:#fff6f8; --card:#ffffff; --ink:#2b2b2b; --accent:#ec407a; --accent2:#f06292;
+      --gridW: min(440px, 96vw);
+    }
+    html,body{height:100%;margin:0;background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial}
+    header{width:var(--gridW);margin:14px auto 10px;display:flex;align-items:center;justify-content:space-between;color:var(--ink)}
+    header .stat{display:flex;gap:12px;align-items:center;font-weight:600}
+    .badge{padding:6px 10px;border-radius:12px;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.07)}
+    #avatar{height:78px;width:auto;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.12);background:#fff}
+    #grid{width:var(--gridW);margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .card{position:relative;width:100%;padding-top:100%;perspective:800px}
+    .inner{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .28s;cursor:pointer}
+    .card.matched .inner{cursor:default}
+    .face{position:absolute;inset:0;border-radius:16px;backface-visibility:hidden;display:flex;align-items:center;justify-content:center}
+    .front{background:var(--card);transform:rotateY(180deg);box-shadow:0 6px 18px rgba(0,0,0,.12);}
+    .front img{width:72%;height:72%;object-fit:contain;image-rendering:auto}
+    .back{
+      background:
+        radial-gradient(circle at 12px 12px, #ffcdd2 3px, transparent 4px),
+        radial-gradient(circle at 34px 22px, #f8bbd0 3px, transparent 4px),
+        radial-gradient(circle at 24px 36px, #f48fb1 3px, transparent 4px),
+        var(--accent2);
+      background-size:44px 44px,44px 44px,44px 44px,auto;
+      box-shadow:0 6px 18px rgba(0,0,0,.12);
+    }
+    .flipped .inner{transform:rotateY(180deg)}
+    #panel{width:var(--gridW);margin:12px auto 18px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+    .btn{appearance:none;border:none;background:#fff;color:#0f172a;border-radius:12px;padding:8px 12px;box-shadow:0 2px 10px rgba(0,0,0,.1);font-weight:600}
+    .btn:active{transform:translateY(1px)}
+    #hint{background:linear-gradient(180deg,#ffd54f,#ffca28)}
+    #hint[disabled]{filter:grayscale(.8);opacity:.7}
+    #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
+    #overlay .cardBox{width:min(520px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
+    footer{width:var(--gridW);margin:6px auto 22px;color:#555;font-size:.92rem;text-align:center}
+    @media (max-width:420px){ header{font-size:14px} .front img{width:76%;height:76%;} }
+  </style>
+</head>
+<body>
+  <header>
+    assets/Diseñadora.png
+    <div class="stat">
+      <span class="badge">⌛ <strong id="time">00:00</strong></span>
+      <span class="badge">🎯 Movimientos: <strong id="moves">0</strong></span>
+      <span class="badge">✅ Parejas: <strong id="pairs">0</strong>/8</span>
+    </div>
+  </header>
+
+  <div id="grid" aria-label="Memory Arts & Crafts"></div>
+
+  <div id="panel">
+    <button class="btn" id="hint" title="Vista rápida — revela todo 1,2 s (1 uso)">👀 Vista rápida</button>
+    <button class="btn" id="restart">🔄 Reiniciar</button>
+    <button class="btn" id="pause">⏸️ Pausa</button>
+  </div>
+
+  <footer>
+    Récord: <span id="best">—</span> · Carta: <strong>diseñadora</strong>
+  </footer>
+
+  <div id="overlay" role="dialog" aria-modal="true">
+    <div class="cardBox">
+      <h2 id="ov-title">Memory Arts & Crafts</h2>
+      <p id="ov-desc">Haz parejas: incluye <strong>libros</strong> y otros ítems de manualidades. La diseñadora tiene la habilidad <em>Vista rápida</em> (1 uso).</p>
+      <button class="btn" id="start">▶️ Empezar</button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const grid = document.getElementById('grid');
+  const timeEl = document.getElementById('time');
+  const movesEl = document.getElementById('moves');
+  const pairsEl = document.getElementById('pairs');
+  const bestEl = document.getElementById('best');
+  const startBtn = document.getElementById('start');
+  const overlay = document.getElementById('overlay');
+  const restartBtn = document.getElementById('restart');
+  const pauseBtn = document.getElementById('pause');
+  const hintBtn = document.getElementById('hint');
+
+  const BEST_KEY = 'memoryRecord_disenadora_png';
+
+  // Rutas de imágenes reales (plano y vibrante)
+  const IMG = {
+    libros: 'assets/libros.png',
+    tijeras: 'assets/tijeras.png',
+    hilo: 'assets/hilo.png',
+    pincel: 'assets/pincel.png',
+    paleta: 'assets/paleta.png',
+    lana: 'assets/lana.png',
+    clip: 'assets/clip.png',
+    imperdible: 'assets/imperdible.png'
+  };
+  const PAIRS = Object.keys(IMG); // 8 parejas
+
+  let deck = [], open = [], moves = 0, pairs = 0, running=false, paused=false, startTime=0, timerId=null;
+
+  function formatTime(ms){
+    const s = Math.floor(ms/1000);
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    return `${mm}:${ss}`;
+  }
+  function updateHUD(){ movesEl.textContent = moves; pairsEl.textContent = pairs; if (running && !paused) timeEl.textContent = formatTime(performance.now()-startTime); }
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+  function buildDeck(){
+    const list = PAIRS.map(k=>IMG[k]);
+    deck = shuffle([...list, ...list]).map((src,idx)=>({ id:idx, src, matched:false, el:null }));
+  }
+
+  function renderGrid(){
+    grid.innerHTML='';
+    deck.forEach(card=>{
+      const cell = document.createElement('div'); cell.className='card'; cell.setAttribute('role','button'); cell.setAttribute('aria-label','carta');
+      const inner = document.createElement('div'); inner.className='inner';
+      const front = document.createElement('div'); front.className='face front';
+      const img = document.createElement('img'); img.src = card.src; img.alt='ítem de manualidades';
+      front.appendChild(img);
+      const back = document.createElement('div'); back.className='face back';
+      inner.appendChild(front); inner.appendChild(back); cell.appendChild(inner);
+      card.el = cell;
+      cell.addEventListener('click', ()=> flip(card));
+      grid.appendChild(cell);
+    });
+  }
+
+  function flip(card){
+    if (!running || paused) return;
+    if (card.matched || open.some(c=>c.id===card.id)) return;
+    card.el.classList.add('flipped');
+    open.push(card);
+    if (open.length===2){
+      moves++; updateHUD();
+      const [a,b]=open;
+      if (a.src===b.src){
+        a.matched=b.matched=true;
+        a.el.classList.add('matched'); b.el.classList.add('matched');
+        open=[]; pairs++; updateHUD();
+        if (pairs===PAIRS.length) return endGame();
+      } else {
+        setTimeout(()=>{ a.el.classList.remove('flipped'); b.el.classList.remove('flipped'); open=[]; }, 650);
+      }
+    }
+  }
+
+  function startGame(){
+    buildDeck(); renderGrid();
+    moves=0; pairs=0;
+    startTime=performance.now(); running=true; paused=false;
+    timeEl.textContent='00:00'; updateHUD();
+    overlay.style.display='none';
+    if (timerId) cancelAnimationFrame(timerId);
+    const tick=()=>{ if (running && !paused) updateHUD(); timerId=requestAnimationFrame(tick); };
+    timerId=requestAnimationFrame(tick);
+    hintBtn.disabled=false; pauseBtn.textContent='⏸️ Pausa';
+  }
+
+  function endGame(){
+    running=false;
+    const total=performance.now()-startTime;
+    const recordStr=`${formatTime(total)} | ${moves} mov`;
+    const prev=localStorage.getItem(BEST_KEY);
+    if (!prev){
+      localStorage.setItem(BEST_KEY, recordStr);
+    } else {
+      const [pm,pv]=prev.split('|').map(s=>s.trim());
+      const [pmm,pss]=pm.split(':').map(n=>+n);
+      const prevMs=(pmm*60+pss)*1000; const prevMov=+pv.split(' ')[0];
+      if (total<prevMs || (total===prevMs && moves<prevMov)){ localStorage.setItem(BEST_KEY, recordStr); }
+    }
+    bestEl.textContent=localStorage.getItem(BEST_KEY);
+    document.getElementById('ov-title').textContent='¡Completado!';
+    document.getElementById('ov-desc').innerHTML=`Tiempo: <strong>${formatTime(total)}</strong> · Movimientos: <strong>${moves}</strong><br>Récord: <strong>${bestEl.textContent}</strong>`;
+    overlay.style.display='flex';
+  }
+
+  // Pausa
+  pauseBtn.addEventListener('click', ()=>{ if (!running) return; paused=!paused; pauseBtn.textContent = paused ? '▶️ Reanudar' : '⏸️ Pausa'; });
+
+  // Reiniciar
+  restartBtn.addEventListener('click', ()=>{ running=false; overlay.style.display='flex'; });
+
+  // Vista rápida (una vez)
+  let hintUsed=false;
+  hintBtn.addEventListener('click', ()=>{
+    if (!running || paused || hintUsed) return;
+    hintUsed=true; hintBtn.disabled=true;
+    deck.forEach(c=>c.el.classList.add('flipped'));
+    setTimeout(()=>{ deck.filter(c=>!c.matched).forEach(c=>c.el.classList.remove('flipped')); }, 1200);
+  });
+
+  // Inicio
+  overlay.style.display='flex';
+  startBtn.addEventListener('click', startGame);
+
+})();
+</script>
+</body>
+</html>

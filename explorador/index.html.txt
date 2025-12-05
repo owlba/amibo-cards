@@ -1,0 +1,392 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+  <title>Caza de hojas — Carta del explorador</title>
+  <style>
+    :root {
+      --bg: #cfe8ff;             /* cielo suave */
+      --grass: #8fd18f;          /* césped */
+      --ui: #1a2b2b;
+      --accent: #2e7d32;
+      --danger: #c62828;
+    }
+    html,body { height:100%; margin:0; background:var(--bg); font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial; }
+    #wrap { display:flex; flex-direction:column; align-items:center; }
+    canvas { background: linear-gradient(#cfe8ff 70%, var(--grass) 70%); border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.15); touch-action:none; }
+    header { width:min(480px, 95vw); display:flex; justify-content:space-between; align-items:center; margin:12px 0; color:var(--ui); }
+    header .stat { display:flex; gap:12px; align-items:center; font-weight:600; }
+    .btn { appearance:none; border:none; background:#fff; color:#0f172a; border-radius:12px; padding:8px 12px; box-shadow:0 2px 10px rgba(0,0,0,.1); font-weight:600; }
+    .btn:active { transform:translateY(1px); }
+    #controls { display:flex; gap:12px; margin:10px 0 18px; }
+    #controls .pad { width:84px; height:44px; border-radius:12px; background:#fff; border:none; box-shadow:0 2px 10px rgba(0,0,0,.1); font-weight:700; }
+    #power { background:linear-gradient(180deg,#ffe082,#ffd54f); }
+    #power[disabled] { filter:grayscale(0.8); opacity:0.7; }
+    #overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.35); }
+    #overlay .card { width:min(520px, 92vw); background:#fff; color:#0f172a; padding:18px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,.25); text-align:center; }
+    .hearts { display:flex; gap:6px; }
+    .heart { width:18px; height:18px; background:var(--danger); clip-path: path("M12 21s-7.5-4.5-9.5-8C1.2 10 2.5 7 5 7c1.7 0 3 1 4 2 1-1 2.3-2 4-2 2.5 0 3.8 3 2.5 6-2 3.5-9.5 8-9.5 8z"); }
+    footer { color:#3c4a4a; font-size:.9rem; margin:8px 0 20px; }
+    @media (max-width:420px) {
+      header { font-size:14px; }
+      #controls .pad { width:72px; height:40px; }
+    }
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <div class="stat">
+      <span id="score">Puntos: 0</span>
+      <span id="combo">Combo ×1</span>
+    </div>
+    <div class="stat">
+      <div class="hearts" id="hearts"></div>
+      <button class="btn" id="pause">⏸️ Pausa</button>
+    </div>
+  </header>
+
+  <canvas id="game" width="360" height="640" aria-label="Caza de hojas"></canvas>
+
+  <div id="controls">
+    <button class="pad" id="left">⬅️</button>
+    <button class="btn" id="power" title="Ráfaga (limpia avispas) — 1 uso">⚡ Ráfaga</button>
+    <button class="pad" id="right">➡️</button>
+  </div>
+
+  <footer>
+    Récord: <span id="best">0</span> · Carta: <strong>explorador</strong>
+  </footer>
+</div>
+
+<div id="overlay" role="dialog" aria-modal="true">
+  <div class="card">
+    <h2 id="ov-title">Caza de hojas</h2>
+    <p id="ov-desc">Arrastra para moverte y atrapa las hojas. Evita las avispas. Tienes 3 corazones y una <strong>Ráfaga</strong> que limpia avispas.</p>
+    <p style="margin:8px 0;">Duración: ~75 s</p>
+    <button class="btn" id="start">▶️ Empezar</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  // Escala a DPR
+  const baseW = canvas.width, baseH = canvas.height;
+  canvas.width = baseW * DPR; canvas.height = baseH * DPR;
+  canvas.style.width = baseW + 'px'; canvas.style.height = baseH + 'px';
+  ctx.scale(DPR, DPR);
+
+  const scoreEl = document.getElementById('score');
+  const comboEl = document.getElementById('combo');
+  const heartsEl = document.getElementById('hearts');
+  const pauseBtn = document.getElementById('pause');
+  const bestEl = document.getElementById('best');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('start');
+  const leftBtn = document.getElementById('left');
+  const rightBtn = document.getElementById('right');
+  const powerBtn = document.getElementById('power');
+
+  const RECORD_KEY = 'bestScore_explorador';
+  const best = +localStorage.getItem(RECORD_KEY) || 0;
+  bestEl.textContent = best;
+
+  // Mundo
+  const world = { w: baseW, h: baseH, groundY: baseH - 56, running:false, paused:false, time:0, duration:75_000 };
+  // Jugador
+  const player = {
+    x: baseW/2, y: world.groundY-90, w: 56, h: 96,
+    speed: 0.35, targetX: baseW/2, sprite: new Image(), flip:false
+  };
+  player.sprite.src = 'assets/Explorador.png'; // sprite del explorador
+
+  // Partículas: hojas / muebles / avispas
+  const items = [];
+  const spawn = { next: 0, rateMs: 800, accel: 0.995, minRate: 360 };
+  // Estado
+  let score = 0, combo = 1, comboTimer = 0, lives = 3, cleared = false;
+
+  function resetHUD() {
+    scoreEl.textContent = `Puntos: ${score}`;
+    comboEl.textContent = `Combo ×${combo}`;
+    heartsEl.innerHTML = '';
+    for (let i=0;i<lives;i++) {
+      const h = document.createElement('div'); h.className='heart';
+      heartsEl.appendChild(h);
+    }
+  }
+
+  function startGame() {
+    score = 0; combo = 1; comboTimer = 0; lives = 3; cleared=false;
+    items.length = 0;
+    world.time = 0; spawn.next = 0; spawn.rateMs = 800;
+    world.running = true; world.paused = false;
+    resetHUD();
+    overlay.style.display = 'none';
+    loop(performance.now());
+  }
+
+  function endGame() {
+    world.running = false;
+    localStorage.setItem(RECORD_KEY, Math.max(score, +localStorage.getItem(RECORD_KEY)||0));
+    bestEl.textContent = localStorage.getItem(RECORD_KEY);
+    document.getElementById('ov-title').textContent = '¡Fin de la partida!';
+    document.getElementById('ov-desc').innerHTML =
+      `Puntuación: <strong>${score}</strong>. Récord: <strong>${bestEl.textContent}</strong>.<br/>`+
+      `Toques para moverte; usa la <strong>Ráfaga</strong> para limpiar avispas.`;
+    overlay.style.display = 'flex';
+  }
+
+  function spawnItem(t) {
+    // tipos: leaf, furniture, wasp
+    const type = t || (Math.random() < 0.7 ? 'leaf' : (Math.random()<0.85 ? 'furniture' : 'wasp'));
+    const size = type==='wasp' ? 28 : (type==='furniture' ? 30 : 24);
+    items.push({
+      type,
+      x: Math.random() * (world.w - size) + size/2,
+      y: -size,
+      vy: 80 + Math.random()*40,   // px/s
+      rot: Math.random()*Math.PI,
+      size
+    });
+  }
+
+  function update(dt) {
+    world.time += dt;
+    if (world.time >= world.duration || lives<=0) { endGame(); return; }
+
+    // Spawn dinámico
+    spawn.next -= dt;
+    if (spawn.next <= 0) {
+      spawnItem();
+      spawn.rateMs = Math.max(spawn.minRate, spawn.rateMs * spawn.accel);
+      spawn.next = spawn.rateMs;
+    }
+
+    // Movimiento jugador
+    const dir = Math.sign(player.targetX - player.x);
+    player.x += dir * player.speed * dt;
+    if (Math.abs(player.targetX - player.x) < 1) player.x = player.targetX;
+    player.x = Math.max(player.w/2, Math.min(world.w - player.w/2, player.x));
+    player.flip = dir < 0;
+
+    // Actualizar ítems
+    for (let i=items.length-1; i>=0; i--) {
+      const it = items[i];
+      it.y += (it.vy * dt / 1000) * (1 + world.time/ world.duration * 0.6); // ligeramente más rápido con el tiempo
+      it.rot += 0.02 * dt;
+
+      // Colisión con jugador
+      if (rectsOverlap(player.x-player.w/2, player.y, player.w, player.h, it.x-it.size/2, it.y-it.size/2, it.size, it.size)) {
+        if (it.type==='wasp') {
+          lives--; combo=1; comboTimer=0; items.splice(i,1);
+          flash('#ffebee'); // golpe
+        } else {
+          const base = it.type==='leaf' ? 10 : 25;
+          // combo: si hacemos otra captura dentro de 1.4s sube el multiplicador (cap ×5)
+          if (comboTimer > 0) combo = Math.min(5, combo+1);
+          comboTimer = 1400;
+          score += Math.floor(base * combo);
+          items.splice(i,1);
+          flash('#e8f5e9'); // buen toque
+        }
+        resetHUD();
+        continue;
+      }
+
+      // Fuera de pantalla
+      if (it.y - it.size/2 > world.h) {
+        items.splice(i,1);
+      }
+    }
+
+    // Combo timer
+    if (comboTimer > 0) {
+      comboTimer -= dt;
+      if (comboTimer <= 0) { comboTimer = 0; combo = 1; }
+    }
+  }
+
+  function draw() {
+    // cielo ya está desde CSS; aquí dibujamos elementos extra (nubes ligeras)
+    ctx.clearRect(0,0,world.w, world.h);
+
+    // Fondo: árboles simples (decorativo)
+    ctx.save();
+    ctx.fillStyle = '#a5d6a7';
+    for (let i=0;i<3;i++) {
+      const tx = 40 + i*120, ty = world.h-120;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 36, 0, Math.PI*2);
+      ctx.arc(tx+24, ty-20, 28, 0, Math.PI*2);
+      ctx.arc(tx-24, ty-26, 28, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#6d4c41';
+      ctx.fillRect(tx-6, world.h-56, 12, 40);
+      ctx.fillStyle = '#a5d6a7';
+    }
+    ctx.restore();
+
+    // Ítems
+    items.forEach(it => {
+      ctx.save();
+      ctx.translate(it.x, it.y);
+      ctx.rotate(it.rot);
+      if (it.type==='leaf') {
+        drawLeaf(it.size);
+      } else if (it.type==='furniture') {
+        drawFurniture(it.size);
+      } else {
+        drawWasp(it.size);
+      }
+      ctx.restore();
+    });
+
+    // Jugador (sprite)
+    const sx = player.x - player.w/2, sy = player.y;
+    ctx.save();
+    if (player.flip) { ctx.translate(player.x, sy); ctx.scale(-1,1); ctx.translate(-player.x, -sy); }
+    ctx.drawImage(player.sprite, sx, sy, player.w, player.h);
+    ctx.restore();
+
+    // HUD flotante mínimo dentro del canvas (tiempo restante)
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    roundedRect(12, 12, 96, 28, 8);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px system-ui';
+    const remain = Math.max(0, Math.ceil((world.duration - world.time)/1000));
+    ctx.fillText(`⏱ ${remain}s`, 20, 31);
+  }
+
+  function loop(ts) {
+    if (!world.running) return;
+    if (world.paused) { requestAnimationFrame(loop); return; }
+    const dt = Math.min(32, ts - (loop._last || ts)); loop._last = ts;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  // Dibujos de ítems (vectoriales)
+  function drawLeaf(s) {
+    ctx.fillStyle = '#2e7d32';
+    ctx.beginPath();
+    ctx.moveTo(0, -s/2);
+    ctx.quadraticCurveTo(s/2, -s/4, s/2, 0);
+    ctx.quadraticCurveTo(s/2, s/4, 0, s/2);
+    ctx.quadraticCurveTo(-s/2, s/4, -s/2, 0);
+    ctx.quadraticCurveTo(-s/2, -s/4, 0, -s/2);
+    ctx.fill();
+    ctx.strokeStyle = '#1b5e20';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, s/2); ctx.lineTo(0, -s/2); ctx.stroke();
+  }
+  function drawFurniture(s) {
+    ctx.fillStyle = '#795548';
+    roundedRect(-s/2, -s/2, s, s, 6);
+    ctx.fillStyle = '#a1887f'; roundedRect(-s/2+4, -s/2+6, s-8, s-12, 6);
+  }
+  function drawWasp(s) {
+    roundedRect(-s/2, -s/2, s, s, s/3, '#fff'); // base para sombras
+    ctx.fillStyle = '#fdd835'; roundedRect(-s/2, -s/2, s, s, s/3);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(-s/2, -s/2+4, s, 5);
+    ctx.fillRect(-s/2, -s/2+14, s, 5);
+    ctx.fillRect(-s/2, -s/2+24, s, 5);
+    // aguijón
+    ctx.beginPath();
+    ctx.moveTo(s/2, 0); ctx.lineTo(s/2+8, 0); ctx.lineTo(s/2, 6); ctx.closePath(); ctx.fill();
+  }
+  function roundedRect(x,y,w,h,r, strokeColor) {
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    if (strokeColor) { ctx.strokeStyle = strokeColor; ctx.stroke(); }
+    else ctx.fill();
+  }
+
+  // Feedback visual
+  let flashTimer = 0, flashColor = '#fff';
+  function flash(color) { flashTimer = 120; flashColor = color; }
+  const oldDraw = draw;
+  draw = function() {
+    oldDraw();
+    if (flashTimer > 0) {
+      flashTimer -= 16;
+      ctx.save();
+      ctx.fillStyle = flashColor; ctx.globalAlpha = Math.max(0, flashTimer/120)*0.25;
+      ctx.fillRect(0,0,world.w, world.h);
+      ctx.restore();
+    }
+  };
+
+  // Interacción
+  function setTargetFromEvent(ev) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+    player.targetX = x;
+  }
+  canvas.addEventListener('touchstart', e => { setTargetFromEvent(e); e.preventDefault(); }, {passive:false});
+  canvas.addEventListener('touchmove', e => { setTargetFromEvent(e); e.preventDefault(); }, {passive:false});
+  canvas.addEventListener('mousedown', setTargetFromEvent);
+  canvas.addEventListener('mousemove', setTargetFromEvent);
+
+  let leftHeld=false, rightHeld=false;
+  leftBtn.addEventListener('touchstart', e=>{leftHeld=true; e.preventDefault();},{passive:false});
+  rightBtn.addEventListener('touchstart', e=>{rightHeld=true; e.preventDefault();},{passive:false});
+  leftBtn.addEventListener('touchend', ()=>{leftHeld=false;});
+  rightBtn.addEventListener('touchend', ()=>{rightHeld=false;});
+  leftBtn.addEventListener('mousedown', ()=>{leftHeld=true;});
+  rightBtn.addEventListener('mousedown', ()=>{rightHeld=true;});
+  window.addEventListener('mouseup', ()=>{leftHeld=false; rightHeld=false;});
+  // Movimiento con botones
+  (function btnMoveLoop(){
+    if (world.running && !world.paused) {
+      if (leftHeld) player.targetX = Math.max(player.w/2, player.x - 12);
+      if (rightHeld) player.targetX = Math.min(world.w - player.w/2, player.x + 12);
+    }
+    requestAnimationFrame(btnMoveLoop);
+  })();
+
+  // Pausa
+  pauseBtn.addEventListener('click', ()=>{
+    world.paused = !world.paused;
+    pauseBtn.textContent = world.paused ? '▶️ Reanudar' : '⏸️ Pausa';
+  });
+
+  // Ráfaga (1 uso)
+  powerBtn.addEventListener('click', ()=>{
+    if (!world.running || world.paused || powerBtn.disabled) return;
+    // elimina avispas y da un pequeño bonus
+    let removed = 0;
+    for (let i=items.length-1;i>=0;i--){
+      if (items[i].type==='wasp'){ items.splice(i,1); removed++; }
+    }
+    if (removed>0) { score += removed * 5; resetHUD(); flash('#fff8e1'); }
+    powerBtn.disabled = true;
+  });
+
+  // Overlay inicio
+  overlay.style.display = 'flex';
+  startBtn.addEventListener('click', startGame);
+
+  // Evita scroll con flechas en móvil
+  ['touchmove','touchstart'].forEach(e=>document.body.addEventListener(e, ev=>{ if(ev.target===canvas) ev.preventDefault(); }, {passive:false}));
+
+})();
+</script>
+</body>
+</html>
