@@ -105,17 +105,6 @@
     // añade más si quieres
   ];
 
-  // Precarga con control de éxito/fracaso
-  var GOOD_ICONS = [];
-  var loaded = 0, failed = 0;
-  ICON_IMG_SRC.forEach(function(src){
-    var img = new Image();
-    img.onload = function(){ loaded++; iconStatus.textContent = 'Iconos cargados: '+loaded+' / '+ICON_IMG_SRC.length+(failed?(' (fallidos: '+failed+')'):''); };
-    img.onerror = function(){ failed++; iconStatus.textContent = 'Iconos cargados: '+loaded+' / '+ICON_IMG_SRC.length+' (fallidos: '+failed+')'; };
-    img.src = src;
-    GOOD_ICONS.push(img);
-  });
-
   // Avispa opcional por imagen (si no existe se dibuja vectorial)
   var WASP_IMG_SRC = 'assets/icons/avispa.png'; // opcional
   var WASP_IMG = null; if (WASP_IMG_SRC){ WASP_IMG = new Image(); WASP_IMG.src = WASP_IMG_SRC; }
@@ -424,3 +413,4 @@
 </script>
 </body>
 </html>
+
