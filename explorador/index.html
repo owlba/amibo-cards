@@ -6,9 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
   <title>Caza de hojas — Carta del explorador</title>
   <style>
-    :root{
-      --ui:#0f172a;
-    }
+    :root{ --ui:#0f172a; }
     html,body{height:100%;margin:0;background:#cfe8ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
     #wrap{display:flex;flex-direction:column;align-items:center}
     header{width:min(520px,95vw);display:flex;justify-content:space-between;align-items:center;margin:12px 0;color:var(--ui)}
@@ -23,6 +21,7 @@
     #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
     #overlay .card{width:min(560px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
     footer{color:#3c4a4a;font-size:.9rem;margin:8px 0 20px}
+    .loadNote{font-size:.85rem;color:#3c4a4a}
   </style>
 </head>
 <body>
@@ -39,6 +38,7 @@
 
   <!-- Ligeramente más ancho/alto para el nuevo fondo -->
   <canvas id="game" width="380" height="680" aria-label="Caza de hojas"></canvas>
+  <div class="loadNote" id="iconStatus" aria-live="polite"></div>
 
   <div id="controls">
     <button class="pad" id="left">⬅️</button>
@@ -55,19 +55,18 @@
   <div class="card">
     <h2>Caza de hojas</h2>
     <p>Arrastra para moverte y atrapa tus ítems favoritos. Evita las <strong>avispas</strong>. Tienes 3 corazones y una <strong>Ráfaga</strong> que limpia avispas.</p>
-    <p style="margin:8px 0;">Duración: ~75 s. Las avispas aumentan con el tiempo (con límite).</p>
+    <!-- Sin texto sobre el comportamiento de las avispas -->
     <button class="btn" id="start">▶️ Empezar</button>
   </div>
 </div>
 
 <script>
 (function(){
-  /* ========================= Config ========================= */
+  /* ========================= Canvas ========================= */
   var DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
   var canvas = document.getElementById('game');
   var ctx = canvas.getContext('2d');
   var baseW = canvas.width, baseH = canvas.height;
-
   canvas.width = baseW * DPR; canvas.height = baseH * DPR;
   canvas.style.width = baseW + 'px'; canvas.style.height = baseH + 'px';
   ctx.scale(DPR, DPR);
@@ -81,6 +80,7 @@
   var leftBtn = document.getElementById('left');
   var rightBtn = document.getElementById('right');
   var powerBtn = document.getElementById('power');
+  var iconStatus = document.getElementById('iconStatus');
 
   var RECORD_KEY = 'bestScore_explorador';
   var best = +localStorage.getItem(RECORD_KEY) || 0;
@@ -88,37 +88,40 @@
 
   /* ========================= Mundo & Jugador ========================= */
   var world = { w: baseW, h: baseH, groundY: baseH - 64, running:false, paused:false, time:0, duration:75*1000 };
-  var player = { x: baseW/2, y: world.groundY-100, w: 56, h: 96, speed: 0.38, targetX: baseW/2, sprite: new Image(), facing: 1 };
+  var player = { x: Math.round(baseW/2), y: world.groundY-100, w: 56, h: 96, speed: 0.40, targetX: Math.round(baseW/2), sprite: new Image(), facing: 1 };
   player.sprite.src = 'assets/Explorador.png';
 
-  // Estado juego
-  var items = []; // elementos que caen (buenos y avispas)
+  var items = [];
   var spawn = { next: 0, rateMs: 800, accel: 0.995, minRate: 360 };
   var score = 0, combo = 1, comboTimer = 0, lives = 3;
 
-  /* ========================= Iconos que caen (tú los eliges) ========================= */
-  // EDITA estas rutas con tus archivos PNG/SVG (en /assets/icons/)
-  // Puedes poner 2…6 iconos (o más). Si alguno no carga, se dibuja un token vectorial de respaldo.
+  /* ========================= Tus iconos PNG ========================= */
+  // ⚠️ Cambia estas rutas por las que hayas subido exactamente (respetando mayúsculas/minúsculas)
   var ICON_IMG_SRC = [
-    'assets/icons/hoja.png',
-    'assets/icons/mueble.png',
-    'assets/icons/fruta.png'
-    // añade más si quieres...
+    'assets/hoja.png',
+    'assets/mueble.png',
+    'assets/fruta.png'
+    'assets/pokeball.png'
+    // añade más si quieres
   ];
-  var GOOD_ICONS = ICON_IMG_SRC.map(function(src){ var im=new Image(); im.src=src; return im; });
 
-  // Icono de avispa opcional (si no lo pones, la avispa se dibuja vectorial)
+  // Precarga con control de éxito/fracaso
+  var GOOD_ICONS = [];
+  var loaded = 0, failed = 0;
+  ICON_IMG_SRC.forEach(function(src){
+    var img = new Image();
+    img.onload = function(){ loaded++; iconStatus.textContent = 'Iconos cargados: '+loaded+' / '+ICON_IMG_SRC.length+(failed?(' (fallidos: '+failed+')'):''); };
+    img.onerror = function(){ failed++; iconStatus.textContent = 'Iconos cargados: '+loaded+' / '+ICON_IMG_SRC.length+' (fallidos: '+failed+')'; };
+    img.src = src;
+    GOOD_ICONS.push(img);
+  });
+
+  // Avispa opcional por imagen (si no existe se dibuja vectorial)
   var WASP_IMG_SRC = 'assets/icons/avispa.png'; // opcional
   var WASP_IMG = null; if (WASP_IMG_SRC){ WASP_IMG = new Image(); WASP_IMG.src = WASP_IMG_SRC; }
 
   /* ========================= HUD ========================= */
-  function updateHUD(){
-    scoreEl.textContent = 'Puntos: ' + score;
-    comboEl.textContent = 'Combo ×' + combo;
-  }
-  function resetHUD(){
-    updateHUD();
-  }
+  function updateHUD(){ scoreEl.textContent = 'Puntos: ' + score; comboEl.textContent = 'Combo ×' + combo; }
 
   /* ========================= Inicio/fin ========================= */
   function startGame(){
@@ -142,32 +145,23 @@
     overlay.style.display='flex';
   }
 
-  /* ========================= Spawning con más avispas (limitado) ========================= */
-  var MAX_WASPS = 6;              // límite de avispas simultáneas
-  var WASP_BASE_PROB = 0.12;      // prob. inicial de avispa (12%)
-  var WASP_MAX_PROB  = 0.45;      // prob. máxima de avispa hacia el final (45%)
-
+  /* ========================= Spawning (con límite de avispas) ========================= */
+  var MAX_WASPS = 6;
+  var WASP_BASE_PROB = 0.10;
+  var WASP_MAX_PROB  = 0.40;
   function currentWaspProb(){
     var t = Math.min(1, world.time / world.duration);
     return WASP_BASE_PROB + (WASP_MAX_PROB - WASP_BASE_PROB) * t;
   }
-  function countWasps(){
-    var c=0; for (var i=0;i<items.length;i++){ if (items[i].type==='wasp') c++; } return c;
-  }
+  function countWasps(){ var c=0; for (var i=0;i<items.length;i++){ if (items[i].type==='wasp') c++; } return c; }
 
   function spawnItem(forceType){
     var type;
     var probWasp = currentWaspProb();
     var canSpawnWasp = countWasps() < MAX_WASPS;
+    if (forceType){ type = forceType; } else { type = (Math.random() < probWasp && canSpawnWasp) ? 'wasp' : 'good'; }
 
-    if (forceType) {
-      type = forceType;
-    } else {
-      // decide tipo: 'good' o 'wasp'
-      type = (Math.random() < probWasp && canSpawnWasp) ? 'wasp' : 'good';
-    }
-
-    var size = (type==='wasp' ? 28 : 30);
+    var size = (type==='wasp' ? 28 : 32);
     var iconIndex = -1;
     if (type==='good' && GOOD_ICONS.length>0){
       iconIndex = Math.floor(Math.random()*GOOD_ICONS.length);
@@ -175,10 +169,10 @@
 
     items.push({
       type: type,
-      imgIndex: iconIndex,  // -1 si no hay imagen
+      imgIndex: iconIndex,
       x: Math.random() * (world.w - size) + size/2,
       y: -size,
-      vy: 80 + Math.random()*40,   // px/s
+      vy: 80 + Math.random()*40,
       rot: Math.random()*Math.PI,
       size: size
     });
@@ -189,7 +183,6 @@
     world.time += dt;
     if (world.time >= world.duration || lives<=0){ endGame(); return; }
 
-    // Spawn dinámico (cada vez más rápido, con mínimo)
     spawn.next -= dt;
     if (spawn.next <= 0){
       spawnItem();
@@ -197,64 +190,54 @@
       spawn.next = spawn.rateMs;
     }
 
-    // Movimiento jugador sin vibración
+    // Movimiento jugador SIN vibración (umbral + posiciones enteras)
     var dx = player.targetX - player.x;
-    if (Math.abs(dx) > 0.5){
+    if (Math.abs(dx) >= 1){
       var dir = dx > 0 ? 1 : -1;
       player.facing = dir;
-      player.x += dir * player.speed * dt;
-      // clamp
+      player.x = Math.round(player.x + dir * player.speed * dt);
       if (player.x < player.w/2) player.x = player.w/2;
       if (player.x > world.w - player.w/2) player.x = world.w - player.w/2;
     } else {
-      // sin micro‑movimientos
-      player.x = player.targetX;
+      player.x = Math.round(player.targetX);
     }
 
     // Actualizar ítems
     for (var i=items.length-1;i>=0;i--){
       var it = items[i];
-      // caída ligeramente más rápida con el tiempo
-      var fallBoost = 1 + (world.time/world.duration)*0.6;
+      var fallBoost = 1 + (world.time/world.duration)*0.55;
       it.y += (it.vy * dt / 1000) * fallBoost;
-      // rotación más lenta para apreciar el icono
-      it.rot += 0.006 * dt;
+      // Rotación MÁS LENTA para apreciar el icono
+      it.rot += 0.003 * dt;
 
       // Colisión con jugador
       if (rectsOverlap(player.x-player.w/2, player.y, player.w, player.h, it.x-it.size/2, it.y-it.size/2, it.size, it.size)){
         if (it.type==='wasp'){
           lives--; combo=1; comboTimer=0; items.splice(i,1);
-          flash('#ffebee'); // golpe
+          flash('#ffebee');
         } else {
-          var base = 20; // puntuación base para icono bueno
+          var base = 20;
           if (comboTimer>0) combo = Math.min(5, combo+1);
           comboTimer = 1400;
           score += Math.floor(base * combo);
           items.splice(i,1);
-          flash('#e8f5e9'); // captura
+          flash('#e8f5e9');
         }
         updateHUD();
         continue;
       }
 
       // Fuera de pantalla
-      if (it.y - it.size/2 > world.h){
-        items.splice(i,1);
-      }
+      if (it.y - it.size/2 > world.h){ items.splice(i,1); }
     }
 
     // Combo timer
-    if (comboTimer > 0){
-      comboTimer -= dt;
-      if (comboTimer <= 0){ comboTimer=0; combo=1; }
-    }
+    if (comboTimer > 0){ comboTimer -= dt; if (comboTimer <= 0){ comboTimer=0; combo=1; } }
   }
 
   /* ========================= Dibujo ========================= */
   function draw(){
     ctx.clearRect(0,0,world.w, world.h);
-
-    // Fondo más realista: cielo con nubes y suelo con varios verdes
     drawBackground();
 
     // Ítems
@@ -263,22 +246,18 @@
       ctx.save();
       ctx.translate(it.x, it.y);
       ctx.rotate(it.rot);
-      if (it.type==='wasp'){
-        drawWaspIcon(it.size);
-      } else {
-        drawGoodIcon(it.size, it.imgIndex);
-      }
+      if (it.type==='wasp'){ drawWaspIcon(it.size); } else { drawGoodIcon(it.size, it.imgIndex); }
       ctx.restore();
     }
 
-    // Jugador (sprite) — sin vibración
-    var sx = player.x - player.w/2, sy = player.y;
+    // Jugador (sprite) — dibujado en enteros; sin vibración
+    var sx = Math.round(player.x - player.w/2), sy = Math.round(player.y);
     ctx.save();
     if (player.facing < 0){ ctx.translate(player.x, sy); ctx.scale(-1,1); ctx.translate(-player.x, -sy); }
     ctx.drawImage(player.sprite, sx, sy, player.w, player.h);
     ctx.restore();
 
-    // HUD (tiempo restante mínimo)
+    // HUD
     ctx.fillStyle = 'rgba(0,0,0,.25)';
     roundedRect(12, 12, 110, 28, 8);
     ctx.fillStyle = '#fff';
@@ -298,14 +277,14 @@
 
   /* ========================= Fondo ========================= */
   function drawBackground(){
-    // cielo (gradiente sutil)
-    var skyGrad = ctx.createLinearGradient(0,0,0,world.h*0.7);
+    // Cielo (gradiente sutil)
+    var skyGrad = ctx.createLinearGradient(0,0,0,world.h*0.70);
     skyGrad.addColorStop(0, '#cfe8ff');
     skyGrad.addColorStop(1, '#eaf5ff');
     ctx.fillStyle = skyGrad;
-    ctx.fillRect(0,0,world.w, world.h*0.7);
+    ctx.fillRect(0,0,world.w, world.h*0.70);
 
-    // nubes
+    // Nubes
     ctx.save();
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     drawCloud(60, 80, 28);
@@ -313,12 +292,11 @@
     drawCloud(world.w/2, 100, 32);
     ctx.restore();
 
-    // suelo con varios tonos de verde (bandas suaves)
-    var groundY = world.h*0.7;
+    // Suelo: bandas y manchas de hierba en varios verdes
+    var groundY = world.h*0.70;
     ctx.fillStyle = '#9bd59b'; ctx.fillRect(0, groundY, world.w, world.h-groundY);
     ctx.fillStyle = '#87cc89'; ctx.fillRect(0, groundY+18, world.w, world.h-groundY-18);
     ctx.fillStyle = '#79c37c'; ctx.fillRect(0, groundY+36, world.w, world.h-groundY-36);
-    // manchas de hierba
     ctx.save();
     ctx.fillStyle = 'rgba(46,125,50,0.20)';
     for (var i=0;i<6;i++){
@@ -337,13 +315,12 @@
     ctx.fill();
   }
 
-  /* ========================= Iconos (buenos / avispa) ========================= */
+  /* ========================= Iconos ========================= */
   function drawGoodIcon(s, imgIndex){
     var img = (imgIndex>=0 && imgIndex<GOOD_ICONS.length) ? GOOD_ICONS[imgIndex] : null;
     if (img && img.complete && img.naturalWidth && img.naturalWidth>0){
       ctx.drawImage(img, -s/2, -s/2, s, s);
     } else {
-      // respaldo: ficha verde
       ctx.fillStyle = '#2e7d32';
       roundedRect(-s/2, -s/2, s, s, s/4);
       ctx.fillStyle = '#1b5e20';
@@ -355,19 +332,17 @@
       ctx.drawImage(WASP_IMG, -s/2, -s/2, s, s);
       return;
     }
-    // respaldo vectorial de avispa (rayas amarillas/negras)
     roundedRect(-s/2, -s/2, s, s, s/3, '#fff');
     ctx.fillStyle = '#fdd835'; roundedRect(-s/2, -s/2, s, s, s/3);
     ctx.fillStyle = '#000';
     ctx.fillRect(-s/2, -s/2+4, s, 5);
     ctx.fillRect(-s/2, -s/2+14, s, 5);
     ctx.fillRect(-s/2, -s/2+24, s, 5);
-    // aguijón
     ctx.beginPath();
     ctx.moveTo(s/2, 0); ctx.lineTo(s/2+8, 0); ctx.lineTo(s/2, 6); ctx.closePath(); ctx.fill();
   }
 
-  /* ========================= Utilidades ========================= */
+  /* ========================= Utils ========================= */
   function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh){
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
@@ -381,7 +356,7 @@
     if (strokeColor){ ctx.strokeStyle = strokeColor; ctx.stroke(); } else { ctx.fill(); }
   }
 
-  // Feedback visual (flash)
+  // Feedback visual
   var flashTimer = 0, flashColor = '#fff';
   function flash(color){ flashTimer = 120; flashColor = color; }
   var _draw = draw;
@@ -400,7 +375,7 @@
   function setTargetFromEvent(ev){
     var rect = canvas.getBoundingClientRect();
     var x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
-    player.targetX = x;
+    player.targetX = Math.round(x);
   }
   canvas.addEventListener('touchstart', function(e){ setTargetFromEvent(e); e.preventDefault(); }, {passive:false});
   canvas.addEventListener('touchmove',  function(e){ setTargetFromEvent(e); e.preventDefault(); }, {passive:false});
@@ -418,8 +393,8 @@
 
   (function btnMoveLoop(){
     if (world.running && !world.paused){
-      if (leftHeld) player.targetX = Math.max(player.w/2, player.x - 12);
-      if (rightHeld) player.targetX = Math.min(world.w - player.w/2, player.x + 12);
+      if (leftHeld) player.targetX = Math.max(player.w/2, Math.round(player.x - 12));
+      if (rightHeld) player.targetX = Math.min(world.w - player.w/2, Math.round(player.x + 12));
     }
     requestAnimationFrame(btnMoveLoop);
   })();
