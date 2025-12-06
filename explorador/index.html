@@ -35,7 +35,6 @@
     </div>
   </header>
 
-  <!-- Ligeramente más ancho/alto para el nuevo fondo -->
   <canvas id="game" width="380" height="680" aria-label="Caza de hojas"></canvas>
 
   <div id="controls">
@@ -53,14 +52,13 @@
   <div class="card">
     <h2>Caza de hojas</h2>
     <p>Arrastra para moverte y atrapa tus ítems favoritos. Evita las <strong>avispas</strong>. Tienes 3 corazones y una <strong>Ráfaga</strong> que limpia avispas.</p>
-    <!-- Sin texto sobre el comportamiento de las avispas -->
     <button class="btn" id="start">▶️ Empezar</button>
   </div>
 </div>
 
 <script>
 (function(){
-  /* ========================= Canvas ========================= */
+  /* ===== Canvas ===== */
   var DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
   var canvas = document.getElementById('game');
   var ctx = canvas.getContext('2d');
@@ -69,6 +67,7 @@
   canvas.style.width = baseW + 'px'; canvas.style.height = baseH + 'px';
   ctx.scale(DPR, DPR);
 
+  /* ===== UI ===== */
   var scoreEl = document.getElementById('score');
   var comboEl = document.getElementById('combo');
   var pauseBtn = document.getElementById('pause');
@@ -83,48 +82,48 @@
   var best = +localStorage.getItem(RECORD_KEY) || 0;
   bestEl.textContent = best;
 
-  /* ========================= Mundo & Jugador ========================= */
+  /* ===== Mundo & jugador ===== */
   var world = { w: baseW, h: baseH, groundY: baseH - 64, running:false, paused:false, time:0, duration:75*1000 };
   var player = { x: Math.round(baseW/2), y: world.groundY-100, w: 56, h: 96, speed: 0.40, targetX: Math.round(baseW/2), sprite: new Image(), facing: 1 };
   player.sprite.src = 'assets/Explorador.png';
 
-  var items = [];
+  /* ===== Estado ===== */
+  var items = []; // objetos que caen
   var spawn = { next: 0, rateMs: 800, accel: 0.995, minRate: 360 };
   var score = 0, combo = 1, comboTimer = 0, lives = 3;
 
-  /* ========================= Tus iconos PNG ========================= */
-  // ⚠️ Cambia estas rutas por las que hayas subido exactamente (respetando mayúsculas/minúsculas)
-  // Carga directa, sin lógica de verificación
+  /* ===== Tus iconos PNG (ajusta rutas) ===== */
   var ICON_IMG_SRC = [
-    'assets/icons/hoja.png',
-    'assets/icons/mueble.png',
-    'assets/icons/fruta.png'
-    'assets/icons/pokeball.png'
-    // añade más si quieres
+    'assets/hoja.png',
+    'assets/mueble.png',
+    'assets/fruta.png',
+    'assets/pokeball.png'
+    // añade/quita según tus archivos
   ];
   var GOOD_ICONS = ICON_IMG_SRC.map(function(src){ var im=new Image(); im.src=src; return im; });
 
-  // Avispa opcional por imagen (si no existe se dibuja vectorial)
-  var WASP_IMG_SRC = 'assets/icons/avispa.png'; // opcional
+  // Imagen de avispa (opcional). Si no existe, se dibuja vectorial.
+  var WASP_IMG_SRC = 'assets/avispa.png';
   var WASP_IMG = null; if (WASP_IMG_SRC){ WASP_IMG = new Image(); WASP_IMG.src = WASP_IMG_SRC; }
 
-  /* ========================= HUD ========================= */
+  /* ===== HUD ===== */
   function updateHUD(){ scoreEl.textContent = 'Puntos: ' + score; comboEl.textContent = 'Combo ×' + combo; }
 
-  /* ========================= Inicio/fin ========================= */
+  /* ===== Inicio / fin ===== */
   function startGame(){
     score=0; combo=1; comboTimer=0; lives=3;
     items.length=0;
     world.time=0; spawn.next=0; spawn.rateMs=800;
-    world.running=true; world.paused=false;
     overlay.style.display='none';
     powerBtn.disabled=false;
-    loop(performance.now());
+    world.running=true; world.paused=false;
+    requestAnimationFrame(loop);
   }
+
   function endGame(){
     world.running=false;
     var prev = +localStorage.getItem(RECORD_KEY) || 0;
-    if (score > prev){ localStorage.setItem(RECORD_KEY, score); }
+    if (score > prev) localStorage.setItem(RECORD_KEY, score);
     bestEl.textContent = localStorage.getItem(RECORD_KEY);
     document.querySelector('#overlay .card h2').textContent = '¡Fin de la partida!';
     document.querySelector('#overlay .card p').innerHTML =
@@ -133,7 +132,7 @@
     overlay.style.display='flex';
   }
 
-  /* ========================= Spawning (con límite de avispas) ========================= */
+  /* ===== Aparición (con límite de avispas) ===== */
   var MAX_WASPS = 6;
   var WASP_BASE_PROB = 0.10;
   var WASP_MAX_PROB  = 0.40;
@@ -147,13 +146,11 @@
     var type;
     var probWasp = currentWaspProb();
     var canSpawnWasp = countWasps() < MAX_WASPS;
-    if (forceType){ type = forceType; } else { type = (Math.random() < probWasp && canSpawnWasp) ? 'wasp' : 'good'; }
+    type = forceType ? forceType : ((Math.random() < probWasp && canSpawnWasp) ? 'wasp' : 'good');
 
     var size = (type==='wasp' ? 28 : 32);
     var iconIndex = -1;
-    if (type==='good' && GOOD_ICONS.length>0){
-      iconIndex = Math.floor(Math.random()*GOOD_ICONS.length);
-    }
+    if (type==='good' && GOOD_ICONS.length>0) iconIndex = Math.floor(Math.random()*GOOD_ICONS.length);
 
     items.push({
       type: type,
@@ -166,7 +163,7 @@
     });
   }
 
-  /* ========================= Update ========================= */
+  /* ===== Update ===== */
   function update(dt){
     world.time += dt;
     if (world.time >= world.duration || lives<=0){ endGame(); return; }
@@ -190,13 +187,12 @@
       player.x = Math.round(player.targetX);
     }
 
-    // Actualizar ítems
+    // Caída / colisiones
     for (var i=items.length-1;i>=0;i--){
       var it = items[i];
       var fallBoost = 1 + (world.time/world.duration)*0.55;
       it.y += (it.vy * dt / 1000) * fallBoost;
-      // Rotación MÁS LENTA para apreciar el icono
-      it.rot += 0.003 * dt;
+      it.rot += 0.003 * dt; // rotación más lenta
 
       // Colisión con jugador
       if (rectsOverlap(player.x-player.w/2, player.y, player.w, player.h, it.x-it.size/2, it.y-it.size/2, it.size, it.size)){
@@ -223,7 +219,7 @@
     if (comboTimer > 0){ comboTimer -= dt; if (comboTimer <= 0){ comboTimer=0; combo=1; } }
   }
 
-  /* ========================= Dibujo ========================= */
+  /* ===== Draw ===== */
   function draw(){
     ctx.clearRect(0,0,world.w, world.h);
     drawBackground();
@@ -238,7 +234,7 @@
       ctx.restore();
     }
 
-    // Jugador (sprite) — dibujado en enteros; sin vibración
+    // Jugador (dibujado en enteros; sin vibración)
     var sx = Math.round(player.x - player.w/2), sy = Math.round(player.y);
     ctx.save();
     if (player.facing < 0){ ctx.translate(player.x, sy); ctx.scale(-1,1); ctx.translate(-player.x, -sy); }
@@ -257,15 +253,16 @@
   function loop(ts){
     if (!world.running) return;
     if (world.paused){ requestAnimationFrame(loop); return; }
-    var dt = Math.min(32, ts - (loop._last || ts)); loop._last = ts;
+    var last = loop._last || ts;
+    var dt = Math.min(32, ts - last); loop._last = ts;
     update(dt);
     draw();
     requestAnimationFrame(loop);
   }
 
-  /* ========================= Fondo ========================= */
+  /* ===== Fondo ===== */
   function drawBackground(){
-    // Cielo (gradiente sutil)
+    // Cielo (gradiente)
     var skyGrad = ctx.createLinearGradient(0,0,0,world.h*0.70);
     skyGrad.addColorStop(0, '#cfe8ff');
     skyGrad.addColorStop(1, '#eaf5ff');
@@ -280,7 +277,7 @@
     drawCloud(world.w/2, 100, 32);
     ctx.restore();
 
-    // Suelo: bandas y manchas de hierba en varios verdes
+    // Suelo con varias bandas de verde + manchas
     var groundY = world.h*0.70;
     ctx.fillStyle = '#9bd59b'; ctx.fillRect(0, groundY, world.w, world.h-groundY);
     ctx.fillStyle = '#87cc89'; ctx.fillRect(0, groundY+18, world.w, world.h-groundY-18);
@@ -303,12 +300,13 @@
     ctx.fill();
   }
 
-  /* ========================= Iconos ========================= */
+  /* ===== Iconos ===== */
   function drawGoodIcon(s, imgIndex){
     var img = (imgIndex>=0 && imgIndex<GOOD_ICONS.length) ? GOOD_ICONS[imgIndex] : null;
     if (img && img.complete && img.naturalWidth && img.naturalWidth>0){
       ctx.drawImage(img, -s/2, -s/2, s, s);
     } else {
+      // respaldo simple
       ctx.fillStyle = '#2e7d32';
       roundedRect(-s/2, -s/2, s, s, s/4);
       ctx.fillStyle = '#1b5e20';
@@ -330,36 +328,21 @@
     ctx.moveTo(s/2, 0); ctx.lineTo(s/2+8, 0); ctx.lineTo(s/2, 6); ctx.closePath(); ctx.fill();
   }
 
-  /* ========================= Utils ========================= */
+  /* ===== Utils ===== */
   function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh){
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
-  function roundedRect(x,y,w,h,r, strokeColor){
+  function roundedRect(x,y,w,h,r){
     ctx.beginPath();
     ctx.moveTo(x+r,y);
     ctx.arcTo(x+w,y,x+w,y+h,r);
     ctx.arcTo(x+w,y+h,x,y+h,r);
     ctx.arcTo(x,y+h,x,y,r);
     ctx.arcTo(x,y,x+w,y,r);
-    if (strokeColor){ ctx.strokeStyle = strokeColor; ctx.stroke(); } else { ctx.fill(); }
+    ctx.fill();
   }
 
-  // Feedback visual
-  var flashTimer = 0, flashColor = '#fff';
-  function flash(color){ flashTimer = 120; flashColor = color; }
-  var _draw = draw;
-  draw = function(){
-    _draw();
-    if (flashTimer > 0){
-      flashTimer -= 16;
-      ctx.save();
-      ctx.fillStyle = flashColor; ctx.globalAlpha = Math.max(0, flashTimer/120)*0.25;
-      ctx.fillRect(0,0,world.w, world.h);
-      ctx.restore();
-    }
-  };
-
-  /* ========================= Input ========================= */
+  /* ===== Input ===== */
   function setTargetFromEvent(ev){
     var rect = canvas.getBoundingClientRect();
     var x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
@@ -407,6 +390,21 @@
   // Inicio
   overlay.style.display='flex';
   startBtn.addEventListener('click', startGame);
+
+  /* ===== Flash visual ===== */
+  var flashTimer = 0, flashColor = '#fff';
+  function flash(color){ flashTimer = 120; flashColor = color; }
+  var lastDraw = draw;
+  draw = function(){
+    lastDraw();
+    if (flashTimer > 0){
+      flashTimer -= 16;
+      ctx.save();
+      ctx.fillStyle = flashColor; ctx.globalAlpha = Math.max(0, flashTimer/120)*0.25;
+      ctx.fillRect(0,0,world.w, world.h);
+      ctx.restore();
+    }
+  };
 
 })();
 </script>
