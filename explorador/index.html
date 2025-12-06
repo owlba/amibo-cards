@@ -92,18 +92,16 @@
   var spawn = { next: 0, rateMs: 800, accel: 0.995, minRate: 360 };
   var score = 0, combo = 1, comboTimer = 0, lives = 3;
 
-  /* ===== Tus iconos PNG (ajusta rutas) ===== */
+  /* ===== Tus iconos PNG (ajusta rutas exactas) ===== */
   var ICON_IMG_SRC = [
     'assets/hoja.png',
     'assets/mueble.png',
     'assets/fruta.png',
     'assets/pokeball.png'
-    // añade/quita según tus archivos
   ];
   var GOOD_ICONS = ICON_IMG_SRC.map(function(src){ var im=new Image(); im.src=src; return im; });
 
-  // Imagen de avispa (opcional). Si no existe, se dibuja vectorial.
-  var WASP_IMG_SRC = 'assets/avispa.png';
+  var WASP_IMG_SRC = 'assets/avispa.png'; // opcional
   var WASP_IMG = null; if (WASP_IMG_SRC){ WASP_IMG = new Image(); WASP_IMG.src = WASP_IMG_SRC; }
 
   /* ===== HUD ===== */
@@ -175,7 +173,9 @@
       spawn.next = spawn.rateMs;
     }
 
-    // Movimiento jugador SIN vibración (umbral + posiciones enteras)
+    /* === Movimiento SIN vibración ===
+       - Dead-zone real: si |dx| < 1 px, NO movemos ni cambiamos facing.
+       - Posiciones enteras (Math.round). */
     var dx = player.targetX - player.x;
     if (Math.abs(dx) >= 1){
       var dir = dx > 0 ? 1 : -1;
@@ -183,9 +183,8 @@
       player.x = Math.round(player.x + dir * player.speed * dt);
       if (player.x < player.w/2) player.x = player.w/2;
       if (player.x > world.w - player.w/2) player.x = world.w - player.w/2;
-    } else {
-      player.x = Math.round(player.targetX);
     }
+    // Si está dentro del dead-zone, NO tocamos player.x ni facing
 
     // Caída / colisiones
     for (var i=items.length-1;i>=0;i--){
@@ -318,7 +317,7 @@
       ctx.drawImage(WASP_IMG, -s/2, -s/2, s, s);
       return;
     }
-    roundedRect(-s/2, -s/2, s, s, s/3, '#fff');
+    roundedRect(-s/2, -s/2, s, s, s/3);
     ctx.fillStyle = '#fdd835'; roundedRect(-s/2, -s/2, s, s, s/3);
     ctx.fillStyle = '#000';
     ctx.fillRect(-s/2, -s/2+4, s, 5);
@@ -364,8 +363,14 @@
 
   (function btnMoveLoop(){
     if (world.running && !world.paused){
-      if (leftHeld) player.targetX = Math.max(player.w/2, Math.round(player.x - 12));
-      if (rightHeld) player.targetX = Math.min(world.w - player.w/2, Math.round(player.x + 12));
+      if (leftHeld){
+        var nx = Math.round(player.x - 12);
+        player.targetX = Math.max(player.w/2, nx);
+      } else if (rightHeld){
+        var nx2 = Math.round(player.x + 12);
+        player.targetX = Math.min(world.w - player.w/2, nx2);
+      }
+      // si no se pulsa nada, NO tocamos targetX ⇒ el jugador queda completamente parado
     }
     requestAnimationFrame(btnMoveLoop);
   })();
