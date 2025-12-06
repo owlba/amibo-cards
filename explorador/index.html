@@ -21,7 +21,6 @@
     #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
     #overlay .card{width:min(560px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
     footer{color:#3c4a4a;font-size:.9rem;margin:8px 0 20px}
-    .loadNote{font-size:.85rem;color:#3c4a4a}
   </style>
 </head>
 <body>
@@ -38,7 +37,6 @@
 
   <!-- Ligeramente más ancho/alto para el nuevo fondo -->
   <canvas id="game" width="380" height="680" aria-label="Caza de hojas"></canvas>
-  <div class="loadNote" id="iconStatus" aria-live="polite"></div>
 
   <div id="controls">
     <button class="pad" id="left">⬅️</button>
@@ -80,7 +78,6 @@
   var leftBtn = document.getElementById('left');
   var rightBtn = document.getElementById('right');
   var powerBtn = document.getElementById('power');
-  var iconStatus = document.getElementById('iconStatus');
 
   var RECORD_KEY = 'bestScore_explorador';
   var best = +localStorage.getItem(RECORD_KEY) || 0;
@@ -97,13 +94,15 @@
 
   /* ========================= Tus iconos PNG ========================= */
   // ⚠️ Cambia estas rutas por las que hayas subido exactamente (respetando mayúsculas/minúsculas)
+  // Carga directa, sin lógica de verificación
   var ICON_IMG_SRC = [
-    'assets/hoja.png',
-    'assets/mueble.png',
-    'assets/fruta.png'
-    'assets/pokeball.png'
+    'assets/icons/hoja.png',
+    'assets/icons/mueble.png',
+    'assets/icons/fruta.png'
+    'assets/icons/pokeball.png'
     // añade más si quieres
   ];
+  var GOOD_ICONS = ICON_IMG_SRC.map(function(src){ var im=new Image(); im.src=src; return im; });
 
   // Avispa opcional por imagen (si no existe se dibuja vectorial)
   var WASP_IMG_SRC = 'assets/icons/avispa.png'; // opcional
@@ -413,4 +412,3 @@
 </script>
 </body>
 </html>
-
