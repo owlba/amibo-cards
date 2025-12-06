@@ -64,121 +64,117 @@
   </div>
 
 <script>
-(() => {
+(function(){
   /* ===================== Canvas y escala ===================== */
-  const DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-  const baseW = canvas.width, baseH = canvas.height;
+  var DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+  var canvas = document.getElementById('game');
+  var ctx = canvas.getContext('2d');
+  var baseW = canvas.width, baseH = canvas.height;
   canvas.width = baseW * DPR; canvas.height = baseH * DPR;
   canvas.style.width = baseW + 'px'; canvas.style.height = baseH + 'px';
   ctx.scale(DPR, DPR);
 
   /* ===================== UI ===================== */
-  const timeEl = document.getElementById('time');
-  const scoreEl = document.getElementById('score');
-  const recipeEl = document.getElementById('recipe');
-  const bestEl = document.getElementById('best');
-  const overlay = document.getElementById('overlay');
-  const startBtn = document.getElementById('start');
-  const pauseBtn = document.getElementById('pause');
-  const restartBtn = document.getElementById('restart');
-  const powerBtn = document.getElementById('power');
+  var timeEl = document.getElementById('time');
+  var scoreEl = document.getElementById('score');
+  var recipeEl = document.getElementById('recipe');
+  var bestEl = document.getElementById('best');
+  var overlay = document.getElementById('overlay');
+  var startBtn = document.getElementById('start');
+  var pauseBtn = document.getElementById('pause');
+  var restartBtn = document.getElementById('restart');
+  var powerBtn = document.getElementById('power');
 
-  const RECORD_KEY = 'crafting_best_amiga';
+  var RECORD_KEY = 'crafting_best_amiga';
   bestEl.textContent = +localStorage.getItem(RECORD_KEY) || 0;
 
   /* ===================== Paletas por receta (cielo/suelo) ===================== */
-  const THEMES = {
-    'Colgar cuadro':   { sky:'#e3f2fd', floor:'#c8e6c9' }, // azul claro + verde
-    'Reparar libro':   { sky:'#fff3e0', floor:'#ffe0b2' }, // crema + melocotón
-    'Pintar esquina':  { sky:'#fce4ec', floor:'#f8bbd0' }  // rosa pastel
+  var THEMES = {
+    'Colgar cuadro':   { sky:'#e3f2fd', floor:'#c8e6c9' },
+    'Reparar libro':   { sky:'#fff3e0', floor:'#ffe0b2' },
+    'Pintar esquina':  { sky:'#fce4ec', floor:'#f8bbd0' }
   };
 
   /* ===================== Mundo ===================== */
-  const world = { w: baseW, h: baseH, groundY: baseH-60, running:false, paused:false, time:0, duration:75_000 };
-  const box = { x: baseW/2-90, y: world.groundY-120, w: 180, h: 110, slots: [] }; // caja más amplia
+  var world = { w: baseW, h: baseH, groundY: baseH-60, running:false, paused:false, time:0, duration:75*1000 };
+  var box = { x: baseW/2-90, y: world.groundY-120, w: 180, h: 110, slots: [] };
 
   /* ===================== Protagonista ===================== */
-  const hero = { x: baseW/2-28, y: world.groundY-190, w: 56, h: 96, sprite:new Image() };
+  var hero = { x: baseW/2-28, y: world.groundY-190, w: 56, h: 96, sprite:new Image() };
   hero.sprite.src = 'assets/amiga-invisible.png';
 
   /* ===================== Carga de iconos personalizados ===================== */
-  // 1) PON AQUÍ TUS ARCHIVOS PNG/SVG EN LA CARPETA /assets/
-  //    Si no aportas un icono, el juego dibuja un vector de respaldo.
-  const ICON_IMG_SRC = {
+  // PON TUS ARCHIVOS EN /assets/ (si falta un icono, se usa el dibujo vectorial)
+  var ICON_IMG_SRC = {
     martillo:  'assets/martillo.png',
     clavos:    'assets/clavos.png',
-    nivel:     'assets/nivel.png',         // nivel de burbuja
+    nivel:     'assets/nivel.png',
     pegamento: 'assets/pegamento.png',
     clip:      'assets/clip.png',
     papel:     'assets/papel.png',
     pincel:    'assets/pincel.png',
     paleta:    'assets/paleta.png',
-    carrocero: 'assets/carrocero.png'      // cinta de carrocero
+    carrocero: 'assets/carrocero.png'
   };
-  const ICON_IMG = Object.fromEntries(
-    Object.entries(ICON_IMG_SRC).map(([k,src]) => {
-      const img = new Image();
-      img.src = src;   // si el archivo no existe o no carga, se usará el vector
-      return [k, img];
-    })
-  );
+  var ICON_IMG = {};
+  Object.keys(ICON_IMG_SRC).forEach(function(k){
+    var img = new Image();
+    img.src = ICON_IMG_SRC[k];
+    ICON_IMG[k] = img;
+  });
 
   /* ===================== Vector de respaldo (plano, vibrante) ===================== */
-  const ITEMS = [
-    { key:'martillo', draw:(x,y,s)=>{ ctx.fillStyle='#546e7a'; ctx.fillRect(x-s*0.45,y-s*0.10,s*0.9,s*0.22); ctx.fillStyle='#8d6e63'; ctx.fillRect(x-s*0.06,y+s*0.12,s*0.12,s*0.70); }},
-    { key:'clavos', draw:(x,y,s)=>{ ctx.fillStyle='#37474f'; for(let i=0;i<3;i++){ const ox=-s*0.25+i*s*0.25; ctx.fillRect(x+ox,y-s*0.05, s*0.08, s*0.40); ctx.fillRect(x+ox-2,y-s*0.08, s*0.12, s*0.06); } }},
-    { key:'nivel', draw:(x,y,s)=>{ ctx.fillStyle='#43a047'; ctx.fillRect(x-s*0.40,y-s*0.12,s*0.80,s*0.24); ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.fillRect(x-s*0.30,y-s*0.06,s*0.60,s*0.12); ctx.fillStyle='#ffeb3b'; ctx.beginPath(); ctx.arc(x, y, s*0.04, 0, Math.PI*2); ctx.fill(); }},
-    { key:'papel', draw:(x,y,s)=>{ ctx.fillStyle='#eceff1'; roundRectPath(x-s*0.28,y-s*0.34,s*0.56,s*0.68,10); ctx.fill(); ctx.fillStyle='#b0bec5'; ctx.fillRect(x-s*0.20, y-s*0.20, s*0.40, s*0.04); ctx.fillRect(x-s*0.20, y-s*0.10, s*0.36, s*0.04); ctx.fillRect(x-s*0.20, y, s*0.28, s*0.04); }},
-    { key:'carrocero', draw:(x,y,s)=>{ ctx.fillStyle='#ffd54f'; ctx.beginPath(); ctx.arc(x,y,s*0.24,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ctx.fillStyle='#ffca28'; ctx.fillRect(x+s*0.12, y-s*0.02, s*0.22, s*0.08); }},
-    { key:'pegamento', draw:(x,y,s)=>{ ctx.fillStyle='#ef5350'; ctx.fillRect(x-s*0.18,y-s*0.10,s*0.36,s*0.46); ctx.fillStyle='#fff'; ctx.fillRect(x-s*0.14,y+s*0.02,s*0.28,s*0.18); ctx.fillStyle='#b71c1c'; ctx.fillRect(x-s*0.06,y-s*0.26,s*0.12,s*0.16); }},
-    { key:'pincel', draw:(x,y,s)=>{ ctx.fillStyle='#8d6e63'; ctx.beginPath(); ctx.moveTo(x-s*0.24,y+s*0.28); ctx.lineTo(x,y-s*0.06); ctx.lineTo(x+s*0.24,y+s*0.28); ctx.closePath(); ctx.fill(); ctx.fillStyle='#90caf9'; ctx.fillRect(x-s*0.08,y-s*0.40,s*0.16,s*0.32); }},
-    { key:'paleta', draw:(x,y,s)=>{ ctx.fillStyle='#ffe082'; ctx.beginPath(); ctx.arc(x,y,s*0.40,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x+s*0.20,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ['#ef5350','#66bb6a','#42a5f5','#ab47bc'].forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x- s*0.20 + i*s*0.12, y+s*0.10 - (i%2)*s*0.06, s*0.06,0,Math.PI*2); ctx.fill(); }); }},
-    { key:'clip', draw:(x,y,s)=>{ ctx.strokeStyle='#546e7a'; ctx.lineWidth = Math.max(2, s*0.12); ctx.beginPath(); ctx.moveTo(x-s*0.14,y-s*0.02); ctx.quadraticCurveTo(x+s*0.20,y-s*0.10, x+s*0.12,y+s*0.28); ctx.quadraticCurveTo(x,y+s*0.40, x-s*0.10,y+s*0.18); ctx.stroke(); } }
+  var ITEMS = [
+    { key:'martillo', draw:function(x,y,s){ ctx.fillStyle='#546e7a'; ctx.fillRect(x-s*0.45,y-s*0.10,s*0.9,s*0.22); ctx.fillStyle='#8d6e63'; ctx.fillRect(x-s*0.06,y+s*0.12,s*0.12,s*0.70); }},
+    { key:'clavos', draw:function(x,y,s){ ctx.fillStyle='#37474f'; for(var i=0;i<3;i++){ var ox=-s*0.25+i*s*0.25; ctx.fillRect(x+ox,y-s*0.05, s*0.08, s*0.40); ctx.fillRect(x+ox-2,y-s*0.08, s*0.12, s*0.06); } }},
+    { key:'nivel', draw:function(x,y,s){ ctx.fillStyle='#43a047'; ctx.fillRect(x-s*0.40,y-s*0.12,s*0.80,s*0.24); ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.fillRect(x-s*0.30,y-s*0.06,s*0.60,s*0.12); ctx.fillStyle='#ffeb3b'; ctx.beginPath(); ctx.arc(x, y, s*0.04, 0, Math.PI*2); ctx.fill(); }},
+    { key:'papel', draw:function(x,y,s){ ctx.fillStyle='#eceff1'; roundRectPath(x-s*0.28,y-s*0.34,s*0.56,s*0.68,10); ctx.fill(); ctx.fillStyle='#b0bec5'; ctx.fillRect(x-s*0.20, y-s*0.20, s*0.40, s*0.04); ctx.fillRect(x-s*0.20, y-s*0.10, s*0.36, s*0.04); ctx.fillRect(x-s*0.20, y, s*0.28, s*0.04); }},
+    { key:'carrocero', draw:function(x,y,s){ ctx.fillStyle='#ffd54f'; ctx.beginPath(); ctx.arc(x,y,s*0.24,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ctx.fillStyle='#ffca28'; ctx.fillRect(x+s*0.12, y-s*0.02, s*0.22, s*0.08); }},
+    { key:'pegamento', draw:function(x,y,s){ ctx.fillStyle='#ef5350'; ctx.fillRect(x-s*0.18,y-s*0.10,s*0.36,s*0.46); ctx.fillStyle='#fff'; ctx.fillRect(x-s*0.14,y+s*0.02,s*0.28,s*0.18); ctx.fillStyle='#b71c1c'; ctx.fillRect(x-s*0.06,y-s*0.26,s*0.12,s*0.16); }},
+    { key:'pincel', draw:function(x,y,s){ ctx.fillStyle='#8d6e63'; ctx.beginPath(); ctx.moveTo(x-s*0.24,y+s*0.28); ctx.lineTo(x,y-s*0.06); ctx.lineTo(x+s*0.24,y+s*0.28); ctx.closePath(); ctx.fill(); ctx.fillStyle='#90caf9'; ctx.fillRect(x-s*0.08,y-s*0.40,s*0.16,s*0.32); }},
+    { key:'paleta', draw:function(x,y,s){ ctx.fillStyle='#ffe082'; ctx.beginPath(); ctx.arc(x,y,s*0.40,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x+s*0.20,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ['#ef5350','#66bb6a','#42a5f5','#ab47bc'].forEach(function(c,i){ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x- s*0.20 + i*s*0.12, y+s*0.10 - (i%2)*s*0.06, s*0.06,0,Math.PI*2); ctx.fill(); }); }},
+    { key:'clip', draw:function(x,y,s){ ctx.strokeStyle='#546e7a'; ctx.lineWidth = Math.max(2, s*0.12); ctx.beginPath(); ctx.moveTo(x-s*0.14,y-s*0.02); ctx.quadraticCurveTo(x+s*0.20,y-s*0.10, x+s*0.12,y+s*0.28); ctx.quadraticCurveTo(x,y+s*0.40, x-s*0.10,y+s*0.18); ctx.stroke(); } }
   ];
 
-  // Dibuja imagen personalizada si existe; si no, vector de respaldo
   function drawItemWithImageOrVector(key, cx, cy, s){
-    const img = ICON_IMG[key];
-    // Si la imagen está cargada, la dibujamos centrada; si no, usamos vector
-    if (img && img.complete && img.naturalWidth > 0) {
+    var img = ICON_IMG[key];
+    if (img && img.complete && img.naturalWidth && img.naturalWidth > 0) {
       ctx.drawImage(img, cx - s*0.5, cy - s*0.5, s, s);
     } else {
-      const def = ITEMS.find(i => i.key === key);
-      def?.draw(cx, cy, s);
+      var def = null;
+      for (var ii=0; ii<ITEMS.length; ii++){ if (ITEMS[ii].key===key){ def=ITEMS[ii]; break; } }
+      if (def) def.draw(cx, cy, s);
     }
   }
 
   /* ===================== Recetas ===================== */
-  const RECIPES = [
+  var RECIPES = [
     { name:'Colgar cuadro', need:['martillo','clavos','nivel'] },
     { name:'Reparar libro',  need:['pegamento','clip','papel'] },
     { name:'Pintar esquina', need:['pincel','paleta','carrocero'] }
   ];
 
-  /* Etiquetas visibles (más claras) */
-  const DISPLAY = {
+  /* Etiquetas visibles */
+  var DISPLAY = {
     martillo:'Martillo', clavos:'Clavos', nivel:'Nivel de burbuja',
     pegamento:'Pegamento', clip:'Clip', papel:'Hoja de papel',
     pincel:'Pincel', paleta:'Paleta', carrocero:'Cinta de carrocero'
   };
 
   /* ===================== Estado ===================== */
-  let score=0, combo=1, comboTimer=0, level=0, currentRecipe=null;
+  var score=0, combo=1, comboTimer=0, level=0, currentRecipe=null;
 
   /* ===================== Bancada: ítems arrastrables ===================== */
-  const bench = { items:[] };
+  var bench = { items:[] };
   function spawnBenchFor(recipe){
     bench.items = [];
-    const need = recipe.need.slice();
-    const pool = ITEMS.map(it=>it.key);
+    var need = recipe.need.slice();
+    var pool = ITEMS.map(function(it){ return it.key; });
 
-    // 3 necesarios + 3 distractores (sin duplicar excesivo)
     while(bench.items.length < 6){
-      const k = bench.items.length < need.length ? need[bench.items.length] : pool[Math.floor(Math.random()*pool.length)];
-      const countK = bench.items.filter(i=>i.key===k).length;
-      if (countK > 1 && !need.includes(k)) continue;
+      var k = bench.items.length < need.length ? need[bench.items.length] : pool[Math.floor(Math.random()*pool.length)];
+      var countK = bench.items.filter(function(i){ return i.key===k; }).length;
+      if (countK > 1 && need.indexOf(k)===-1) continue;
 
       bench.items.push({
         key: k,
@@ -190,25 +186,20 @@
     }
   }
 
-  /* ===================== Slots de la caja (más separados y con “píldora” de texto) ===================== */
+  /* ===================== Slots más separados y legibles ===================== */
   function buildSlots(recipe){
-    const spacing = 70;              // separación mayor entre slots
-    const slotW = 46, slotH = 46;    // slot un poco mayor
-    box.slots = recipe.need.map((key,i)=>({
-      key,
-      x: box.x + 18 + i*spacing,
-      y: box.y + 18,
-      w: slotW,
-      h: slotH,
-      filled:false
-    }));
+    var spacing = 70;
+    var slotW = 46, slotH = 46;
+    box.slots = recipe.need.map(function(key,i){
+      return { key:key, x: box.x + 18 + i*spacing, y: box.y + 18, w: slotW, h: slotH, filled:false };
+    });
   }
 
   /* ===================== HUD ===================== */
   function updateHUD(){
     scoreEl.textContent = score;
     recipeEl.textContent = currentRecipe ? currentRecipe.name : '—';
-    const remain = Math.max(0, Math.ceil((world.duration - world.time)/1000));
+    var remain = Math.max(0, Math.ceil((world.duration - world.time)/1000));
     timeEl.textContent = String(Math.floor(remain/60)).padStart(2,'0') + ':' + String(remain%60).padStart(2,'0');
   }
 
@@ -225,15 +216,15 @@
 
   function endGame(win){
     world.running=false;
-    const best = +localStorage.getItem(RECORD_KEY) || 0;
+    var best = +localStorage.getItem(RECORD_KEY) || 0;
     localStorage.setItem(RECORD_KEY, Math.max(best, score));
     bestEl.textContent = localStorage.getItem(RECORD_KEY);
     document.getElementById('start').textContent = '▶️ Repetir';
-    const title = win ? '¡Recetas completadas!' : 'Se acabó el tiempo';
+    var title = win ? '¡Recetas completadas!' : 'Se acabó el tiempo';
     document.querySelector('#overlay .card h2').textContent = title;
     document.querySelector('#overlay .card p').innerHTML =
-      `Puntos: <strong>${score}</strong> · Récord: <strong>${bestEl.textContent}</strong><br>`+
-      `Receta actual: <strong>${currentRecipe?.name||'—'}</strong>`;
+      'Puntos: <strong>'+score+'</strong> · Récord: <strong>'+bestEl.textContent+'</strong><br>'+
+      'Receta actual: <strong>'+(currentRecipe ? currentRecipe.name : '—')+'</strong>';
     overlay.style.display='flex';
   }
 
@@ -241,17 +232,15 @@
   function update(dt){
     if (world.paused) return;
     world.time += dt;
-    if (world.time >= world.duration) return endGame(false);
-
-    // Combo
+    if (world.time >= world.duration) { endGame(false); return; }
     if (comboTimer>0){ comboTimer -= dt; if (comboTimer<=0){ comboTimer=0; combo=1; } }
   }
 
   function draw(){
     ctx.clearRect(0,0,world.w, world.h);
 
-    // Fondo según la receta
-    const theme = THEMES[currentRecipe?.name] || { sky:'#bbdefb', floor:'#a5d6a7' };
+    // Fondo según la receta (sin optional chaining)
+    var theme = THEMES[currentRecipe ? currentRecipe.name : ''] || { sky:'#bbdefb', floor:'#a5d6a7' };
     ctx.save();
     ctx.fillStyle = theme.sky;   ctx.fillRect(0,0,world.w, world.h*0.70);
     ctx.fillStyle = theme.floor; ctx.fillRect(0,world.h*0.70, world.w, world.h*0.30);
@@ -264,61 +253,68 @@
     ctx.fillStyle='#8d6e63'; roundRect(box.x, box.y, box.w, box.h, 12, true);
     ctx.fillStyle='#6d4c41'; roundRect(box.x+8, box.y+64, box.w-16, 18, 8, true);
 
-    // Slots + etiquetas más legibles (píldora)
-    box.slots.forEach(sl=>{
+    // Slots + etiquetas (píldora)
+    for (var si=0; si<box.slots.length; si++){
+      var sl = box.slots[si];
       ctx.fillStyle= sl.filled ? '#81c784' : '#ffffff';
       roundRect(sl.x, sl.y, sl.w, sl.h, 8, true);
 
-      // etiqueta debajo (separación mayor + fondo)
-      const label = DISPLAY[sl.key] || sl.key;
-      const padX = 8, padY = 6;
+      var label = DISPLAY[sl.key] || sl.key;
+      var padX = 8, padY = 6;
       ctx.font = 'bold 12px system-ui';
-      const textW = ctx.measureText(label).width;
-      const pillW = Math.max(textW + padX*2, sl.w + 16);
-      const pillH = 22;
-      const pillX = sl.x + sl.w/2 - pillW/2;
-      const pillY = sl.y + sl.h + 24;
+      var textW = ctx.measureText(label).width;
+      var pillW = Math.max(textW + padX*2, sl.w + 16);
+      var pillH = 22;
+      var pillX = sl.x + sl.w/2 - pillW/2;
+      var pillY = sl.y + sl.h + 24;
 
-      // fondo de etiqueta
       ctx.fillStyle = '#ffffff';
       roundRect(pillX, pillY, pillW, pillH, 12, true);
-      ctx.strokeStyle = 'rgba(0,0,0,.08)'; ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,.08)';
+      ctx.beginPath(); // asegurar trazo del borde
+      ctx.moveTo(pillX+12, pillY);
+      ctx.arcTo(pillX+pillW, pillY, pillX+pillW, pillY+pillH, 12);
+      ctx.arcTo(pillX+pillW, pillY+pillH, pillX, pillY+pillH, 12);
+      ctx.arcTo(pillX, pillY+pillH, pillX, pillY, 12);
+      ctx.arcTo(pillX, pillY, pillX+pillW, pillY, 12);
+      ctx.stroke();
 
-      // texto centrado
       ctx.fillStyle = '#263238';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, pillX + pillW/2 - textW/2, pillY + pillH/2);
-    });
+    }
 
     // Bancada
     ctx.fillStyle='#b0bec5'; roundRect(20, 90, world.w-40, 10, 6, true);
 
-    // Ítems (imagen personalizada si existe; si no, vector)
-    bench.items.forEach(it=>{
-      if (it.placed) return;
-      const cx = it.x + (it.dragging ? it.dx : 0);
-      const cy = it.y + (it.dragging ? it.dy : 0);
+    // Ítems
+    for (var bi=0; bi<bench.items.length; bi++){
+      var it = bench.items[bi];
+      if (it.placed) continue;
+      var cx = it.x + (it.dragging ? it.dx : 0);
+      var cy = it.y + (it.dragging ? it.dy : 0);
       ctx.fillStyle='rgba(0,0,0,.06)'; ctx.beginPath(); ctx.arc(cx, cy+it.s*0.56, it.s*0.36, 0, Math.PI*2); ctx.fill();
       drawItemWithImageOrVector(it.key, cx, cy, it.s);
-    });
+    }
 
-    // HUD dentro del canvas (tiempo restante pequeño)
+    // HUD dentro del canvas (tiempo restante)
     ctx.fillStyle='rgba(0,0,0,.25)'; roundRect(12, 12, 110, 28, 8, true);
     ctx.fillStyle='#fff'; ctx.font='bold 14px system-ui';
-    const remain = Math.max(0, Math.ceil((world.duration - world.time)/1000));
-    ctx.fillText(`⏱ ${remain}s`, 20, 31);
+    var remain = Math.max(0, Math.ceil((world.duration - world.time)/1000));
+    ctx.fillText('⏱ '+remain+'s', 20, 31);
   }
 
   function loop(ts){
     if (!world.running) return;
-    const dt = Math.min(32, ts - (loop._last || ts)); loop._last = ts;
+    var last = loop._last || ts;
+    var dt = Math.min(32, ts - last); loop._last = ts;
     update(dt);
     updateHUD();
     draw();
     requestAnimationFrame(loop);
   }
 
-  /* ===================== Utilidades de dibujo ===================== */
+  /* ===================== Utilidades dibujo ===================== */
   function roundRect(x,y,w,h,r, fill){
     ctx.beginPath();
     ctx.moveTo(x+r,y);
@@ -338,13 +334,13 @@
   }
 
   /* ===================== Drag & drop ===================== */
-  let dragging=null;
+  var dragging=null;
   function pickItemAt(px,py){
-    for(let i=bench.items.length-1;i>=0;i--){
-      const it = bench.items[i];
+    for(var i=bench.items.length-1;i>=0;i--){
+      var it = bench.items[i];
       if (it.placed) continue;
-      const cx = it.x + (it.dragging ? it.dx : 0);
-      const cy = it.y + (it.dragging ? it.dy : 0);
+      var cx = it.x + (it.dragging ? it.dx : 0);
+      var cy = it.y + (it.dragging ? it.dy : 0);
       if (px>cx-30 && px<cx+30 && py>cy-30 && py<cy+30){
         return it;
       }
@@ -352,36 +348,37 @@
     return null;
   }
   function onPointerDown(ev){
-    const rect = canvas.getBoundingClientRect();
-    const x = (ev.touches? ev.touches[0].clientX: ev.clientX) - rect.left;
-    const y = (ev.touches? ev.touches[0].clientY: ev.clientY) - rect.top;
+    var rect = canvas.getBoundingClientRect();
+    var x = (ev.touches? ev.touches[0].clientX: ev.clientX) - rect.left;
+    var y = (ev.touches? ev.touches[0].clientY: ev.clientY) - rect.top;
     dragging = pickItemAt(x,y);
     if (dragging){ dragging.dragging=true; dragging.dx=0; dragging.dy=0; }
   }
   function onPointerMove(ev){
     if (!dragging) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (ev.touches? ev.touches[0].clientX: ev.clientX) - rect.left;
-    const y = (ev.touches? ev.touches[0].clientY: ev.clientY) - rect.top;
+    var rect = canvas.getBoundingClientRect();
+    var x = (ev.touches? ev.touches[0].clientX: ev.clientX) - rect.left;
+    var y = (ev.touches? ev.touches[0].clientY: ev.clientY) - rect.top;
     dragging.dx = x - dragging.x;
     dragging.dy = y - dragging.y;
     ev.preventDefault();
   }
   function onPointerUp(){
     if (!dragging) return;
-    const dropX = dragging.x + dragging.dx, dropY = dragging.y + dragging.dy;
-    let placed=false;
-    for (const sl of box.slots){
+    var dropX = dragging.x + dragging.dx, dropY = dragging.y + dragging.dy;
+    var placed=false;
+    for (var s=0; s<box.slots.length; s++){
+      var sl = box.slots[s];
       if (sl.filled) continue;
       if (dropX>sl.x && dropX<sl.x+sl.w && dropY>sl.y && dropY<sl.y+sl.h){
         if (dragging.key === sl.key){
           sl.filled=true; dragging.placed=true; placed=true;
-          const gained = Math.floor(50 * combo);
+          var gained = Math.floor(50 * combo);
           score += gained; combo = Math.min(5, combo+1); comboTimer = 1600;
-          if (box.slots.every(s=>s.filled)){
+          if (box.slots.every(function(ss){ return ss.filled; })){
             score += 100 * combo; combo = Math.min(5, combo+1); comboTimer = 1600;
             level++;
-            if (level >= RECIPES.length) { return endGame(true); }
+            if (level >= RECIPES.length) { endGame(true); return; }
             currentRecipe = RECIPES[level];
             spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
           }
@@ -400,24 +397,26 @@
   window.addEventListener('touchend', onPointerUp);
 
   /* ===================== Pausa y reinicio ===================== */
-  pauseBtn.addEventListener('click', ()=>{ if (!world.running) return; world.paused=!world.paused; pauseBtn.textContent = world.paused? '▶️ Reanudar':'⏸️ Pausa'; });
-  restartBtn.addEventListener('click', ()=>{ world.running=false; overlay.style.display='flex'; });
+  pauseBtn.addEventListener('click', function(){ if (!world.running) return; world.paused=!world.paused; pauseBtn.textContent = world.paused? '▶️ Reanudar':'⏸️ Pausa'; });
+  restartBtn.addEventListener('click', function(){ world.running=false; overlay.style.display='flex'; });
 
   /* ===================== Comodín ===================== */
-  powerBtn.addEventListener('click', ()=>{
+  powerBtn.addEventListener('click', function(){
     if (!world.running || world.paused || powerBtn.disabled) return;
-    const sl = box.slots.find(s=>!s.filled);
+    var sl = null;
+    for (var i=0;i<box.slots.length;i++){ if (!box.slots[i].filled){ sl=box.slots[i]; break; } }
     if (!sl) return;
     powerBtn.disabled=true;
     sl.filled=true;
-    const it = bench.items.find(i=>!i.placed && i.key===sl.key);
+    var it = null;
+    for (var j=0;j<bench.items.length;j++){ if (!bench.items[j].placed && bench.items[j].key===sl.key){ it = bench.items[j]; break; } }
     if (it) it.placed=true;
     score += Math.floor(50 * combo);
     combo = Math.min(5, combo+1); comboTimer = 1600;
-    if (box.slots.every(s=>s.filled)){
+    if (box.slots.every(function(ss){ return ss.filled; })){
       score += 100 * combo; combo = Math.min(5, combo+1); comboTimer = 1600;
       level++;
-      if (level >= RECIPES.length) { return endGame(true); }
+      if (level >= RECIPES.length) { endGame(true); return; }
       currentRecipe = RECIPES[level];
       spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
     }
@@ -431,3 +430,5 @@
 </script>
 </body>
 </html>
+
+
