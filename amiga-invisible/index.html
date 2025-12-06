@@ -8,7 +8,7 @@
   <style>
     :root{
       --ui:#0f172a;
-      --panelW:min(520px,96vw); /* panel un poco más ancho para que coincida con la nueva caja */
+      --panelW:min(560px,96vw); /* panel más ancho para acompañar la caja */
     }
     html,body{height:100%;margin:0;background:#f0f9ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
     header{width:var(--panelW);margin:14px auto 10px;display:flex;justify-content:space-between;align-items:center;color:var(--ui)}
@@ -22,7 +22,7 @@
     #power[disabled]{filter:grayscale(.8);opacity:.7}
     footer{width:var(--panelW);margin:6px auto 22px;color:#3c4a4a;font-size:.92rem;text-align:center}
     #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
-    #overlay .card{width:min(560px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
+    #overlay .card{width:min(600px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
     @media (max-width:420px){ header{font-size:14px} }
   </style>
 </head>
@@ -39,7 +39,8 @@
     </div>
   </header>
 
-  <canvas id="game" width="380" height="640" aria-label="Mini-crafting"></canvas>
+  <!-- ✅ Canvas más ancho para albergar una caja mayor -->
+  <canvas id="game" width="420" height="680" aria-label="Mini-crafting"></canvas>
 
   <div id="panel">
     <button class="btn" id="power" title="Comodín (coloca un ítem que falte) — 1 uso">🃏 Comodín</button>
@@ -53,9 +54,9 @@
   <div id="overlay" role="dialog" aria-modal="true">
     <div class="card">
       <h2>Mini‑crafting</h2>
-      <!-- ✅ Mensaje de bienvenida personalizado -->
+      <!-- Mensaje de bienvenida personalizado -->
       <p id="welcome">¿Puedes ayudarme metiendo el seleccionando las herramientas que necesito?</p>
-      <ul style="text-align:left;max-width:520px;margin:10px auto;">
+      <ul style="text-align:left;max-width:560px;margin:10px auto;">
         <li><strong>Movimiento:</strong> toca un ítem y arrástralo. Suéltalo sobre la caja.</li>
         <li><strong>Recetas:</strong> 3 niveles; cada uno exige 3 ítems.</li>
         <li><strong>Puntuación:</strong> +50 por ítem correcto, +100 por receta completa, combo por rapidez.</li>
@@ -97,12 +98,13 @@
   };
 
   /* ===================== Mundo ===================== */
-  var world = { w: baseW, h: baseH, groundY: baseH-60, running:false, paused:false, time:0, duration:75*1000 };
-  /* ✅ Caja más ancha para espaciar etiquetas */
-  var box = { x: baseW/2-120, y: world.groundY-130, w: 240, h: 120, slots: [] };
+  var world = { w: baseW, h: baseH, groundY: baseH-70, running:false, paused:false, time:0, duration:75*1000 };
+
+  /* ✅ Caja aún más ancha (selección/colocación) */
+  var box = { x: baseW/2-160, y: world.groundY-150, w: 320, h: 140, slots: [] };
 
   /* ===================== Protagonista ===================== */
-  var hero = { x: baseW/2-28, y: world.groundY-200, w: 56, h: 96, sprite:new Image() };
+  var hero = { x: baseW/2-28, y: world.groundY-220, w: 56, h: 96, sprite:new Image() };
   hero.sprite.src = 'assets/amiga-invisible.png';
 
   /* ===================== Iconos personalizados (rutas que tú subirás) ===================== */
@@ -155,7 +157,7 @@
     { name:'Pintar esquina', need:['pincel','paleta','carrocero'] }
   ];
 
-  /* Etiquetas visibles (más claras) */
+  /* Etiquetas visibles */
   var DISPLAY = {
     martillo:'Martillo', clavos:'Clavos', nivel:'Nivel de burbuja',
     pegamento:'Pegamento', clip:'Clip', papel:'Hoja de papel',
@@ -167,32 +169,59 @@
 
   /* ===================== Bancada: ítems arrastrables ===================== */
   var bench = { items:[] };
+
+  function shuffle(arr){
+    for (var i=arr.length-1; i>0; i--){
+      var j = Math.floor(Math.random()*(i+1));
+      var tmp = arr[i]; arr[i]=arr[j]; arr[j]=tmp;
+    }
+    return arr;
+  }
+
+  /* ✅ SIN REPETIDOS: 3 necesarios + 3 distractores únicos y distintos de los necesarios */
   function spawnBenchFor(recipe){
     bench.items = [];
-    var need = recipe.need.slice();
-    var pool = ITEMS.map(function(it){ return it.key; });
 
-    while(bench.items.length < 6){
-      var k = bench.items.length < need.length ? need[bench.items.length] : pool[Math.floor(Math.random()*pool.length)];
-      var countK = bench.items.filter(function(i){ return i.key===k; }).length;
-      if (countK > 1 && need.indexOf(k)===-1) continue;
+    var needed = recipe.need.slice();                       // 3 necesarios
+    var poolAll = ITEMS.map(function(it){ return it.key; }); // todos los ítems posibles
 
-      bench.items.push({
-        key: k,
-        x: 60 + (bench.items.length%3)*110,           // un poco más separados
-        y: 120 + Math.floor(bench.items.length/3)*120,
-        s: 50,                                        // iconos levemente mayores
-        dragging:false, dx:0, dy:0, placed:false
-      });
+    // Añadir necesarios primero (posiciones 0..2)
+    for (var i=0; i<needed.length; i++){
+      bench.items.push(makeBenchItem(needed[i], bench.items.length));
+    }
+
+    // Construir conjunto de distractores posibles (excluye los necesarios)
+    var distractorPool = [];
+    for (var p=0; p<poolAll.length; p++){
+      var key = poolAll[p];
+      if (needed.indexOf(key)===-1) distractorPool.push(key);
+    }
+
+    // Elegir 3 distractores únicos sin repetidos
+    shuffle(distractorPool);
+    var distractors = distractorPool.slice(0, 3);
+
+    // Añadir distractores (posiciones 3..5)
+    for (var d=0; d<distractors.length; d++){
+      bench.items.push(makeBenchItem(distractors[d], bench.items.length));
     }
   }
 
-  /* ===================== Slots más separados y con “píldora” de texto ===================== */
+  // Crea un item para la bancada con coordenadas según índice (cuadrícula 3x2, más espaciada)
+  function makeBenchItem(key, idx){
+    var col = idx % 3;
+    var row = Math.floor(idx / 3);
+    var x = 60 + col * 120;              // más separación horizontal
+    var y = 120 + row * 130;             // más separación vertical
+    return { key:key, x:x, y:y, s:56, dragging:false, dx:0, dy:0, placed:false };
+  }
+
+  /* ===================== Slots más separados y legibles ===================== */
   function buildSlots(recipe){
-    var spacing = 80;              // mayor separación (aprovecha la caja más ancha)
-    var slotW = 50, slotH = 50;    // slots más grandes
+    var spacing = 104;              // separación mayor gracias a la caja de 320 px
+    var slotW = 54, slotH = 54;     // slots algo más grandes
     box.slots = recipe.need.map(function(key,i){
-      return { key:key, x: box.x + 20 + i*spacing, y: box.y + 18, w: slotW, h: slotH, filled:false };
+      return { key:key, x: box.x + 18 + i*spacing, y: box.y + 18, w: slotW, h: slotH, filled:false };
     });
   }
 
@@ -208,7 +237,8 @@
   function startGame(){
     score=0; combo=1; comboTimer=0; level=0; world.time=0;
     currentRecipe = RECIPES[level];
-    spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
+    spawnBenchFor(currentRecipe);
+    buildSlots(currentRecipe);
     world.running=true; world.paused=false;
     overlay.style.display='none';
     powerBtn.disabled=false; pauseBtn.textContent='⏸️ Pausa';
@@ -222,7 +252,6 @@
     bestEl.textContent = localStorage.getItem(RECORD_KEY);
     document.getElementById('start').textContent = '▶️ Repetir';
     var title = win ? '¡Recetas completadas!' : 'Se acabó el tiempo';
-    /* ✅ Mensaje de victoria con agradecimiento y casa */
     var extra = win ? '<br><br><strong>¡Muchas gracias! Ahora ya puedo terminar de construir mi casa.</strong>' : '';
     document.querySelector('#overlay .card h2').textContent = title;
     document.querySelector('#overlay .card p').innerHTML =
@@ -245,16 +274,16 @@
     // Fondo según la receta
     var theme = THEMES[currentRecipe ? currentRecipe.name : ''] || { sky:'#bbdefb', floor:'#a5d6a7' };
     ctx.save();
-    ctx.fillStyle = theme.sky;   ctx.fillRect(0,0,world.w, world.h*0.70);
-    ctx.fillStyle = theme.floor; ctx.fillRect(0,world.h*0.70, world.w, world.h*0.30);
+    ctx.fillStyle = theme.sky;   ctx.fillRect(0,0,world.w, world.h*0.72);
+    ctx.fillStyle = theme.floor; ctx.fillRect(0,world.h*0.72, world.w, world.h*0.28);
     ctx.restore();
 
     // Protagonista
     ctx.drawImage(hero.sprite, hero.x, hero.y, hero.w, hero.h);
 
-    // Caja (más ancha)
+    // Caja (aún más ancha)
     ctx.fillStyle='#8d6e63'; roundRect(box.x, box.y, box.w, box.h, 12, true);
-    ctx.fillStyle='#6d4c41'; roundRect(box.x+8, box.y+70, box.w-16, 20, 8, true);
+    ctx.fillStyle='#6d4c41'; roundRect(box.x+8, box.y+78, box.w-16, 22, 8, true);
 
     // Slots + etiquetas tipo “píldora”
     for (var si=0; si<box.slots.length; si++){
@@ -266,10 +295,10 @@
       var padX = 8;
       ctx.font = 'bold 12px system-ui';
       var textW = ctx.measureText(label).width;
-      var pillW = Math.max(textW + padX*2, sl.w + 20);
+      var pillW = Math.max(textW + padX*2, sl.w + 24);
       var pillH = 24;
       var pillX = sl.x + sl.w/2 - pillW/2;
-      var pillY = sl.y + sl.h + 26;
+      var pillY = sl.y + sl.h + 28;
 
       ctx.fillStyle = '#ffffff';
       roundRect(pillX, pillY, pillW, pillH, 12, true);
@@ -288,9 +317,9 @@
     }
 
     // Bancada (barra superior donde descansan ítems)
-    ctx.fillStyle='#b0bec5'; roundRect(20, 90, world.w-40, 10, 6, true);
+    ctx.fillStyle='#b0bec5'; roundRect(20, 100, world.w-40, 10, 6, true);
 
-    // Ítems
+    // Ítems (imagen personalizada si existe; si no, vector)
     for (var bi=0; bi<bench.items.length; bi++){
       var it = bench.items[bi];
       if (it.placed) continue;
@@ -383,7 +412,8 @@
             level++;
             if (level >= RECIPES.length) { endGame(true); return; }
             currentRecipe = RECIPES[level];
-            spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
+            spawnBenchFor(currentRecipe);
+            buildSlots(currentRecipe);
           }
         }
         break;
@@ -421,7 +451,8 @@
       level++;
       if (level >= RECIPES.length) { endGame(true); return; }
       currentRecipe = RECIPES[level];
-      spawnBenchFor(currentRecipe); buildSlots(currentRecipe);
+      spawnBenchFor(currentRecipe);
+      buildSlots(currentRecipe);
     }
   });
 
@@ -433,4 +464,3 @@
 </script>
 </body>
 </html>
-
