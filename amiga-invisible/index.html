@@ -8,7 +8,7 @@
   <style>
     :root{
       --ui:#0f172a;
-      --panelW:min(480px,96vw);
+      --panelW:min(520px,96vw); /* panel un poco más ancho para que coincida con la nueva caja */
     }
     html,body{height:100%;margin:0;background:#f0f9ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
     header{width:var(--panelW);margin:14px auto 10px;display:flex;justify-content:space-between;align-items:center;color:var(--ui)}
@@ -22,7 +22,7 @@
     #power[disabled]{filter:grayscale(.8);opacity:.7}
     footer{width:var(--panelW);margin:6px auto 22px;color:#3c4a4a;font-size:.92rem;text-align:center}
     #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
-    #overlay .card{width:min(520px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
+    #overlay .card{width:min(560px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
     @media (max-width:420px){ header{font-size:14px} }
   </style>
 </head>
@@ -39,7 +39,7 @@
     </div>
   </header>
 
-  <canvas id="game" width="360" height="640" aria-label="Mini-crafting"></canvas>
+  <canvas id="game" width="380" height="640" aria-label="Mini-crafting"></canvas>
 
   <div id="panel">
     <button class="btn" id="power" title="Comodín (coloca un ítem que falte) — 1 uso">🃏 Comodín</button>
@@ -53,8 +53,9 @@
   <div id="overlay" role="dialog" aria-modal="true">
     <div class="card">
       <h2>Mini‑crafting</h2>
-      <p>Arrastra las <strong>herramientas y recursos correctos</strong> a la caja de trabajo. Completa la receta antes de que acabe el tiempo. Tienes un <em>Comodín</em> (1 uso).</p>
-      <ul style="text-align:left;max-width:480px;margin:10px auto;">
+      <!-- ✅ Mensaje de bienvenida personalizado -->
+      <p id="welcome">¿Puedes ayudarme metiendo el seleccionando las herramientas que necesito?</p>
+      <ul style="text-align:left;max-width:520px;margin:10px auto;">
         <li><strong>Movimiento:</strong> toca un ítem y arrástralo. Suéltalo sobre la caja.</li>
         <li><strong>Recetas:</strong> 3 niveles; cada uno exige 3 ítems.</li>
         <li><strong>Puntuación:</strong> +50 por ítem correcto, +100 por receta completa, combo por rapidez.</li>
@@ -97,14 +98,14 @@
 
   /* ===================== Mundo ===================== */
   var world = { w: baseW, h: baseH, groundY: baseH-60, running:false, paused:false, time:0, duration:75*1000 };
-  var box = { x: baseW/2-90, y: world.groundY-120, w: 180, h: 110, slots: [] };
+  /* ✅ Caja más ancha para espaciar etiquetas */
+  var box = { x: baseW/2-120, y: world.groundY-130, w: 240, h: 120, slots: [] };
 
   /* ===================== Protagonista ===================== */
-  var hero = { x: baseW/2-28, y: world.groundY-190, w: 56, h: 96, sprite:new Image() };
+  var hero = { x: baseW/2-28, y: world.groundY-200, w: 56, h: 96, sprite:new Image() };
   hero.sprite.src = 'assets/amiga-invisible.png';
 
-  /* ===================== Carga de iconos personalizados ===================== */
-  // PON TUS ARCHIVOS EN /assets/ (si falta un icono, se usa el dibujo vectorial)
+  /* ===================== Iconos personalizados (rutas que tú subirás) ===================== */
   var ICON_IMG_SRC = {
     martillo:  'assets/martillo.png',
     clavos:    'assets/clavos.png',
@@ -154,7 +155,7 @@
     { name:'Pintar esquina', need:['pincel','paleta','carrocero'] }
   ];
 
-  /* Etiquetas visibles */
+  /* Etiquetas visibles (más claras) */
   var DISPLAY = {
     martillo:'Martillo', clavos:'Clavos', nivel:'Nivel de burbuja',
     pegamento:'Pegamento', clip:'Clip', papel:'Hoja de papel',
@@ -178,20 +179,20 @@
 
       bench.items.push({
         key: k,
-        x: 60 + (bench.items.length%3)*100,
-        y: 120 + Math.floor(bench.items.length/3)*115,
-        s: 48,
+        x: 60 + (bench.items.length%3)*110,           // un poco más separados
+        y: 120 + Math.floor(bench.items.length/3)*120,
+        s: 50,                                        // iconos levemente mayores
         dragging:false, dx:0, dy:0, placed:false
       });
     }
   }
 
-  /* ===================== Slots más separados y legibles ===================== */
+  /* ===================== Slots más separados y con “píldora” de texto ===================== */
   function buildSlots(recipe){
-    var spacing = 70;
-    var slotW = 46, slotH = 46;
+    var spacing = 80;              // mayor separación (aprovecha la caja más ancha)
+    var slotW = 50, slotH = 50;    // slots más grandes
     box.slots = recipe.need.map(function(key,i){
-      return { key:key, x: box.x + 18 + i*spacing, y: box.y + 18, w: slotW, h: slotH, filled:false };
+      return { key:key, x: box.x + 20 + i*spacing, y: box.y + 18, w: slotW, h: slotH, filled:false };
     });
   }
 
@@ -221,10 +222,12 @@
     bestEl.textContent = localStorage.getItem(RECORD_KEY);
     document.getElementById('start').textContent = '▶️ Repetir';
     var title = win ? '¡Recetas completadas!' : 'Se acabó el tiempo';
+    /* ✅ Mensaje de victoria con agradecimiento y casa */
+    var extra = win ? '<br><br><strong>¡Muchas gracias! Ahora ya puedo terminar de construir mi casa.</strong>' : '';
     document.querySelector('#overlay .card h2').textContent = title;
     document.querySelector('#overlay .card p').innerHTML =
       'Puntos: <strong>'+score+'</strong> · Récord: <strong>'+bestEl.textContent+'</strong><br>'+
-      'Receta actual: <strong>'+(currentRecipe ? currentRecipe.name : '—')+'</strong>';
+      'Receta actual: <strong>'+(currentRecipe ? currentRecipe.name : '—')+'</strong>' + extra;
     overlay.style.display='flex';
   }
 
@@ -239,7 +242,7 @@
   function draw(){
     ctx.clearRect(0,0,world.w, world.h);
 
-    // Fondo según la receta (sin optional chaining)
+    // Fondo según la receta
     var theme = THEMES[currentRecipe ? currentRecipe.name : ''] || { sky:'#bbdefb', floor:'#a5d6a7' };
     ctx.save();
     ctx.fillStyle = theme.sky;   ctx.fillRect(0,0,world.w, world.h*0.70);
@@ -249,29 +252,29 @@
     // Protagonista
     ctx.drawImage(hero.sprite, hero.x, hero.y, hero.w, hero.h);
 
-    // Caja
+    // Caja (más ancha)
     ctx.fillStyle='#8d6e63'; roundRect(box.x, box.y, box.w, box.h, 12, true);
-    ctx.fillStyle='#6d4c41'; roundRect(box.x+8, box.y+64, box.w-16, 18, 8, true);
+    ctx.fillStyle='#6d4c41'; roundRect(box.x+8, box.y+70, box.w-16, 20, 8, true);
 
-    // Slots + etiquetas (píldora)
+    // Slots + etiquetas tipo “píldora”
     for (var si=0; si<box.slots.length; si++){
       var sl = box.slots[si];
       ctx.fillStyle= sl.filled ? '#81c784' : '#ffffff';
-      roundRect(sl.x, sl.y, sl.w, sl.h, 8, true);
+      roundRect(sl.x, sl.y, sl.w, sl.h, 10, true);
 
       var label = DISPLAY[sl.key] || sl.key;
-      var padX = 8, padY = 6;
+      var padX = 8;
       ctx.font = 'bold 12px system-ui';
       var textW = ctx.measureText(label).width;
-      var pillW = Math.max(textW + padX*2, sl.w + 16);
-      var pillH = 22;
+      var pillW = Math.max(textW + padX*2, sl.w + 20);
+      var pillH = 24;
       var pillX = sl.x + sl.w/2 - pillW/2;
-      var pillY = sl.y + sl.h + 24;
+      var pillY = sl.y + sl.h + 26;
 
       ctx.fillStyle = '#ffffff';
       roundRect(pillX, pillY, pillW, pillH, 12, true);
       ctx.strokeStyle = 'rgba(0,0,0,.08)';
-      ctx.beginPath(); // asegurar trazo del borde
+      ctx.beginPath();
       ctx.moveTo(pillX+12, pillY);
       ctx.arcTo(pillX+pillW, pillY, pillX+pillW, pillY+pillH, 12);
       ctx.arcTo(pillX+pillW, pillY+pillH, pillX, pillY+pillH, 12);
@@ -284,7 +287,7 @@
       ctx.fillText(label, pillX + pillW/2 - textW/2, pillY + pillH/2);
     }
 
-    // Bancada
+    // Bancada (barra superior donde descansan ítems)
     ctx.fillStyle='#b0bec5'; roundRect(20, 90, world.w-40, 10, 6, true);
 
     // Ítems
@@ -297,8 +300,8 @@
       drawItemWithImageOrVector(it.key, cx, cy, it.s);
     }
 
-    // HUD dentro del canvas (tiempo restante)
-    ctx.fillStyle='rgba(0,0,0,.25)'; roundRect(12, 12, 110, 28, 8, true);
+    // HUD dentro del canvas (tiempo)
+    ctx.fillStyle='rgba(0,0,0,.25)'; roundRect(12, 12, 120, 30, 8, true);
     ctx.fillStyle='#fff'; ctx.font='bold 14px system-ui';
     var remain = Math.max(0, Math.ceil((world.duration - world.time)/1000));
     ctx.fillText('⏱ '+remain+'s', 20, 31);
@@ -430,5 +433,4 @@
 </script>
 </body>
 </html>
-
 
