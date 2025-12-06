@@ -65,7 +65,7 @@
 
 <script>
 (() => {
-  /* ====== Canvas y escala ====== */
+  /* ===================== Canvas y escala ===================== */
   const DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -74,7 +74,7 @@
   canvas.style.width = baseW + 'px'; canvas.style.height = baseH + 'px';
   ctx.scale(DPR, DPR);
 
-  /* ====== UI ====== */
+  /* ===================== UI ===================== */
   const timeEl = document.getElementById('time');
   const scoreEl = document.getElementById('score');
   const recipeEl = document.getElementById('recipe');
@@ -88,48 +88,44 @@
   const RECORD_KEY = 'crafting_best_amiga';
   bestEl.textContent = +localStorage.getItem(RECORD_KEY) || 0;
 
-  /* ====== Paletas por receta (cielo/suelo) ====== */
+  /* ===================== Paletas por receta (cielo/suelo) ===================== */
   const THEMES = {
     'Colgar cuadro':   { sky:'#e3f2fd', floor:'#c8e6c9' }, // azul claro + verde
     'Reparar libro':   { sky:'#fff3e0', floor:'#ffe0b2' }, // crema + melocotón
     'Pintar esquina':  { sky:'#fce4ec', floor:'#f8bbd0' }  // rosa pastel
   };
 
-  /* ====== Mundo ====== */
+  /* ===================== Mundo ===================== */
   const world = { w: baseW, h: baseH, groundY: baseH-60, running:false, paused:false, time:0, duration:75_000 };
   const box = { x: baseW/2-90, y: world.groundY-120, w: 180, h: 110, slots: [] }; // caja más amplia
 
-  /* ====== Protagonista ====== */
+  /* ===================== Protagonista ===================== */
   const hero = { x: baseW/2-28, y: world.groundY-190, w: 56, h: 96, sprite:new Image() };
   hero.sprite.src = 'assets/amiga-invisible.png';
 
-  /* ====== Ayuda: cargar imágenes personalizadas ====== */
-  const loadImage = (src) => {
-    if (!src) return null;
-    const img = new Image(); img.src = src; return img;
+  /* ===================== Carga de iconos personalizados ===================== */
+  // 1) PON AQUÍ TUS ARCHIVOS PNG/SVG EN LA CARPETA /assets/
+  //    Si no aportas un icono, el juego dibuja un vector de respaldo.
+  const ICON_IMG_SRC = {
+    martillo:  'assets/martillo.png',
+    clavos:    'assets/clavos.png',
+    nivel:     'assets/nivel.png',         // nivel de burbuja
+    pegamento: 'assets/pegamento.png',
+    clip:      'assets/clip.png',
+    papel:     'assets/papel.png',
+    pincel:    'assets/pincel.png',
+    paleta:    'assets/paleta.png',
+    carrocero: 'assets/carrocero.png'      // cinta de carrocero
   };
+  const ICON_IMG = Object.fromEntries(
+    Object.entries(ICON_IMG_SRC).map(([k,src]) => {
+      const img = new Image();
+      img.src = src;   // si el archivo no existe o no carga, se usará el vector
+      return [k, img];
+    })
+  );
 
-  /* ====== Ítems disponibles (vector + imagen opcional) ====== */
-  // 1) Si pones tus propios PNG/SVG en /assets, cambia ICON_IMG_SRC con las rutas.
- 
-const ICON_IMG_SRC = {
-  martillo: 'assets/martillo.png',
-  clavos:   'assets/clavos.png',
-  nivel:    'assets/nivel.png',
-  pegamento:'assets/pegamento.png',
-  clip:     'assets/clip.png',
-  papel:    'assets/papel.png',
-  pincel:   'assets/pincel.png',
-  paleta:   'assets/paleta.png',
-  carrocero:'assets/carrocero.png'
-};
-
-    // ejemplo: 'martillo':'assets/martillo.png'
-    martillo:null, clavos:null, nivel:null, pegamento:null, clip:null, papel:null, pincel:null, paleta:null, carrocero:null
-  };
-  const ICON_IMG = Object.fromEntries(Object.entries(ICON_IMG_SRC).map(([k,v]) => [k, loadImage(v)]));
-
-  // 2) Fallback vectorial (plano, vibrante) si no hay imagen
+  /* ===================== Vector de respaldo (plano, vibrante) ===================== */
   const ITEMS = [
     { key:'martillo', draw:(x,y,s)=>{ ctx.fillStyle='#546e7a'; ctx.fillRect(x-s*0.45,y-s*0.10,s*0.9,s*0.22); ctx.fillStyle='#8d6e63'; ctx.fillRect(x-s*0.06,y+s*0.12,s*0.12,s*0.70); }},
     { key:'clavos', draw:(x,y,s)=>{ ctx.fillStyle='#37474f'; for(let i=0;i<3;i++){ const ox=-s*0.25+i*s*0.25; ctx.fillRect(x+ox,y-s*0.05, s*0.08, s*0.40); ctx.fillRect(x+ox-2,y-s*0.08, s*0.12, s*0.06); } }},
@@ -138,14 +134,15 @@ const ICON_IMG_SRC = {
     { key:'carrocero', draw:(x,y,s)=>{ ctx.fillStyle='#ffd54f'; ctx.beginPath(); ctx.arc(x,y,s*0.24,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ctx.fillStyle='#ffca28'; ctx.fillRect(x+s*0.12, y-s*0.02, s*0.22, s*0.08); }},
     { key:'pegamento', draw:(x,y,s)=>{ ctx.fillStyle='#ef5350'; ctx.fillRect(x-s*0.18,y-s*0.10,s*0.36,s*0.46); ctx.fillStyle='#fff'; ctx.fillRect(x-s*0.14,y+s*0.02,s*0.28,s*0.18); ctx.fillStyle='#b71c1c'; ctx.fillRect(x-s*0.06,y-s*0.26,s*0.12,s*0.16); }},
     { key:'pincel', draw:(x,y,s)=>{ ctx.fillStyle='#8d6e63'; ctx.beginPath(); ctx.moveTo(x-s*0.24,y+s*0.28); ctx.lineTo(x,y-s*0.06); ctx.lineTo(x+s*0.24,y+s*0.28); ctx.closePath(); ctx.fill(); ctx.fillStyle='#90caf9'; ctx.fillRect(x-s*0.08,y-s*0.40,s*0.16,s*0.32); }},
-    { key:'paleta', draw:(x,y,s)=>{ ctx.fillStyle:'#ffe082'; ctx.beginPath(); ctx.arc(x,y,s*0.40,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x+s*0.20,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ['#ef5350','#66bb6a','#42a5f5','#ab47bc'].forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x- s*0.20 + i*s*0.12, y+s*0.10 - (i%2)*s*0.06, s*0.06,0,Math.PI*2); ctx.fill(); }); }},
+    { key:'paleta', draw:(x,y,s)=>{ ctx.fillStyle='#ffe082'; ctx.beginPath(); ctx.arc(x,y,s*0.40,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='destination-out'; ctx.beginPath(); ctx.arc(x+s*0.20,y,s*0.12,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over'; ['#ef5350','#66bb6a','#42a5f5','#ab47bc'].forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x- s*0.20 + i*s*0.12, y+s*0.10 - (i%2)*s*0.06, s*0.06,0,Math.PI*2); ctx.fill(); }); }},
     { key:'clip', draw:(x,y,s)=>{ ctx.strokeStyle='#546e7a'; ctx.lineWidth = Math.max(2, s*0.12); ctx.beginPath(); ctx.moveTo(x-s*0.14,y-s*0.02); ctx.quadraticCurveTo(x+s*0.20,y-s*0.10, x+s*0.12,y+s*0.28); ctx.quadraticCurveTo(x,y+s*0.40, x-s*0.10,y+s*0.18); ctx.stroke(); } }
   ];
 
-  // Función de dibujo que usa imagen si existe
+  // Dibuja imagen personalizada si existe; si no, vector de respaldo
   function drawItemWithImageOrVector(key, cx, cy, s){
     const img = ICON_IMG[key];
-    if (img && img.complete) { // dibuja imagen centrada
+    // Si la imagen está cargada, la dibujamos centrada; si no, usamos vector
+    if (img && img.complete && img.naturalWidth > 0) {
       ctx.drawImage(img, cx - s*0.5, cy - s*0.5, s, s);
     } else {
       const def = ITEMS.find(i => i.key === key);
@@ -153,7 +150,7 @@ const ICON_IMG_SRC = {
     }
   }
 
-  /* ====== Recetas ====== */
+  /* ===================== Recetas ===================== */
   const RECIPES = [
     { name:'Colgar cuadro', need:['martillo','clavos','nivel'] },
     { name:'Reparar libro',  need:['pegamento','clip','papel'] },
@@ -167,10 +164,10 @@ const ICON_IMG_SRC = {
     pincel:'Pincel', paleta:'Paleta', carrocero:'Cinta de carrocero'
   };
 
-  /* ====== Estado ====== */
+  /* ===================== Estado ===================== */
   let score=0, combo=1, comboTimer=0, level=0, currentRecipe=null;
 
-  /* ====== Bancada: ítems arrastrables ====== */
+  /* ===================== Bancada: ítems arrastrables ===================== */
   const bench = { items:[] };
   function spawnBenchFor(recipe){
     bench.items = [];
@@ -193,9 +190,9 @@ const ICON_IMG_SRC = {
     }
   }
 
-  /* ====== Slots de la caja (más separados y con “píldora” de texto) ====== */
+  /* ===================== Slots de la caja (más separados y con “píldora” de texto) ===================== */
   function buildSlots(recipe){
-    const spacing = 70;              // antes 40 → más separación
+    const spacing = 70;              // separación mayor entre slots
     const slotW = 46, slotH = 46;    // slot un poco mayor
     box.slots = recipe.need.map((key,i)=>({
       key,
@@ -207,7 +204,7 @@ const ICON_IMG_SRC = {
     }));
   }
 
-  /* ====== HUD ====== */
+  /* ===================== HUD ===================== */
   function updateHUD(){
     scoreEl.textContent = score;
     recipeEl.textContent = currentRecipe ? currentRecipe.name : '—';
@@ -215,7 +212,7 @@ const ICON_IMG_SRC = {
     timeEl.textContent = String(Math.floor(remain/60)).padStart(2,'0') + ':' + String(remain%60).padStart(2,'0');
   }
 
-  /* ====== Juego ====== */
+  /* ===================== Juego ===================== */
   function startGame(){
     score=0; combo=1; comboTimer=0; level=0; world.time=0;
     currentRecipe = RECIPES[level];
@@ -240,7 +237,7 @@ const ICON_IMG_SRC = {
     overlay.style.display='flex';
   }
 
-  /* ====== Update & Draw ====== */
+  /* ===================== Update & Draw ===================== */
   function update(dt){
     if (world.paused) return;
     world.time += dt;
@@ -321,7 +318,7 @@ const ICON_IMG_SRC = {
     requestAnimationFrame(loop);
   }
 
-  /* ====== Utilidades de dibujo ====== */
+  /* ===================== Utilidades de dibujo ===================== */
   function roundRect(x,y,w,h,r, fill){
     ctx.beginPath();
     ctx.moveTo(x+r,y);
@@ -340,7 +337,7 @@ const ICON_IMG_SRC = {
     ctx.arcTo(x,y,x+w,y,r);
   }
 
-  /* ====== Drag & drop ====== */
+  /* ===================== Drag & drop ===================== */
   let dragging=null;
   function pickItemAt(px,py){
     for(let i=bench.items.length-1;i>=0;i--){
@@ -402,11 +399,11 @@ const ICON_IMG_SRC = {
   canvas.addEventListener('touchmove', onPointerMove, {passive:false});
   window.addEventListener('touchend', onPointerUp);
 
-  /* ====== Pausa y reinicio ====== */
+  /* ===================== Pausa y reinicio ===================== */
   pauseBtn.addEventListener('click', ()=>{ if (!world.running) return; world.paused=!world.paused; pauseBtn.textContent = world.paused? '▶️ Reanudar':'⏸️ Pausa'; });
   restartBtn.addEventListener('click', ()=>{ world.running=false; overlay.style.display='flex'; });
 
-  /* ====== Comodín ====== */
+  /* ===================== Comodín ===================== */
   powerBtn.addEventListener('click', ()=>{
     if (!world.running || world.paused || powerBtn.disabled) return;
     const sl = box.slots.find(s=>!s.filled);
@@ -426,7 +423,7 @@ const ICON_IMG_SRC = {
     }
   });
 
-  /* ====== Inicio ====== */
+  /* ===================== Inicio ===================== */
   overlay.style.display='flex';
   startBtn.addEventListener('click', startGame);
 
@@ -434,4 +431,3 @@ const ICON_IMG_SRC = {
 </script>
 </body>
 </html>
-
