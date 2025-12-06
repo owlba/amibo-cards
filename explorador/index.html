@@ -6,7 +6,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
   <title>Caza de hojas — Carta del explorador</title>
   <style>
-    :root{ --ui:#0f172a; }
+    :root{
+      --ui:#0f172a;
+      --danger:#c62828; /* corazones */
+    }
     html,body{height:100%;margin:0;background:#cfe8ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
     #wrap{display:flex;flex-direction:column;align-items:center}
     header{width:min(520px,95vw);display:flex;justify-content:space-between;align-items:center;margin:12px 0;color:var(--ui)}
@@ -19,8 +22,30 @@
     #power{background:linear-gradient(180deg,#ffe082,#ffd54f)}
     #power[disabled]{filter:grayscale(.8);opacity:.7}
     #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
-    #overlay .card{width:min(560px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
+    #overlay .card{width:min(620px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
     footer{color:#3c4a4a;font-size:.9rem;margin:8px 0 20px}
+
+    /* === Vidas (corazones) === */
+    .hearts{display:flex;gap:6px;align-items:center}
+    .heart{
+      width:18px;height:18px;background:var(--danger);
+      clip-path: path("M12 21s-7.5-4.5-9.5-8C1.2 10 2.5 7 5 7c1.7 0 3 1 4 2 1-1 2.3-2 4-2 2.5 0 3.8 3 2.5 6-2 3.5-9.5 8-9.5 8z");
+      transform-origin:center;
+    }
+    @keyframes popOut {
+      0%   { transform: scale(1); opacity:1; }
+      60%  { transform: scale(1.35); opacity:1; }
+      100% { transform: scale(0.4); opacity:0; }
+    }
+    .heart.pop { animation: popOut 420ms ease forwards; }
+
+    /* Tabla de récords */
+    .records { margin:12px auto 6px; text-align:left; max-width:520px; }
+    .records h3 { margin:10px 0 6px; }
+    .records ol { margin:0; padding-left:22px; }
+    .records small { color:#607d8b; }
+    .cfg { margin:8px auto; font-size:.9rem; color:#455a64; }
+    .cfg code { background:#eef2f7; padding:2px 6px; border-radius:8px; }
   </style>
 </head>
 <body>
@@ -31,6 +56,7 @@
       <span id="combo">Combo ×1</span>
     </div>
     <div class="stat">
+      <div class="hearts" id="hearts"></div>
       <button class="btn" id="pause">⏸️ Pausa</button>
     </div>
   </header>
@@ -52,13 +78,25 @@
   <div class="card">
     <h2>Caza de hojas</h2>
     <p>Arrastra para moverte y atrapa tus ítems favoritos. Evita las <strong>avispas</strong>. Tienes 3 corazones y una <strong>Ráfaga</strong> que limpia avispas.</p>
+    <div class="cfg">Dificultad (editable arriba en el código): <code>MAX_WASPS</code>, <code>WASP_BASE_PROB</code>, <code>WASP_MAX_PROB</code>, <code>SPAWN_MIN_RATE</code>, <code>SPAWN_ACCEL</code>.</div>
+    <div class="records" id="recordsBox" aria-live="polite"></div>
     <button class="btn" id="start">▶️ Empezar</button>
   </div>
 </div>
 
 <script>
 (function(){
-  /* ===== Canvas ===== */
+  /* ========================= Configuración de dificultad (CURVA) =========================
+     - Edita estos valores para afinar el reto sin tocar el resto del código. */
+  var DIFFICULTY = {
+    MAX_WASPS: 6,        // nº máximo de avispas simultáneas
+    WASP_BASE_PROB: 0.10,// probabilidad inicial de avispa por spawn
+    WASP_MAX_PROB: 0.40, // probabilidad máxima al final de la partida
+    SPAWN_MIN_RATE: 360, // mínimo intervalo de spawn (ms)
+    SPAWN_ACCEL: 0.995   // aceleración del ritmo de aparición en cada spawn
+  };
+
+  /* ========================= Canvas ========================= */
   var DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
   var canvas = document.getElementById('game');
   var ctx = canvas.getContext('2d');
@@ -67,9 +105,10 @@
   canvas.style.width = baseW + 'px'; canvas.style.height = baseH + 'px';
   ctx.scale(DPR, DPR);
 
-  /* ===== UI ===== */
+  /* ========================= UI ========================= */
   var scoreEl = document.getElementById('score');
   var comboEl = document.getElementById('combo');
+  var heartsEl = document.getElementById('hearts');
   var pauseBtn = document.getElementById('pause');
   var bestEl = document.getElementById('best');
   var overlay = document.getElementById('overlay');
@@ -77,39 +116,105 @@
   var leftBtn = document.getElementById('left');
   var rightBtn = document.getElementById('right');
   var powerBtn = document.getElementById('power');
+  var recordsBox = document.getElementById('recordsBox');
 
   var RECORD_KEY = 'bestScore_explorador';
+  var SCORES_KEY = 'scores_explorador_top5'; // tabla local
   var best = +localStorage.getItem(RECORD_KEY) || 0;
   bestEl.textContent = best;
 
-  /* ===== Mundo & jugador ===== */
+  /* ========================= Mundo & jugador ========================= */
   var world = { w: baseW, h: baseH, groundY: baseH - 64, running:false, paused:false, time:0, duration:75*1000 };
   var player = { x: Math.round(baseW/2), y: world.groundY-100, w: 56, h: 96, speed: 0.40, targetX: Math.round(baseW/2), sprite: new Image(), facing: 1 };
   player.sprite.src = 'assets/Explorador.png';
 
-  /* ===== Estado ===== */
+  /* ========================= Estado ========================= */
   var items = []; // objetos que caen
-  var spawn = { next: 0, rateMs: 800, accel: 0.995, minRate: 360 };
+  var spawn = { next: 0, rateMs: 800, accel: DIFFICULTY.SPAWN_ACCEL, minRate: DIFFICULTY.SPAWN_MIN_RATE };
   var score = 0, combo = 1, comboTimer = 0, lives = 3;
 
-  /* ===== Tus iconos PNG (ajusta rutas exactas) ===== */
+  /* ========================= Tus iconos PNG (ajusta rutas exactas) ========================= */
   var ICON_IMG_SRC = [
     'assets/gato.png',
-    'assets/mueble.png',
-    'assets/fruta.png',
-    'assets/pokeball.png'
+    'assets/icons/mueble.png',
+    'assets/icons/fruta.png',
+    'assets/icons/pokeball.png'
   ];
   var GOOD_ICONS = ICON_IMG_SRC.map(function(src){ var im=new Image(); im.src=src; return im; });
 
   var WASP_IMG_SRC = 'assets/avispa.png'; // opcional
   var WASP_IMG = null; if (WASP_IMG_SRC){ WASP_IMG = new Image(); WASP_IMG.src = WASP_IMG_SRC; }
 
-  /* ===== HUD ===== */
-  function updateHUD(){ scoreEl.textContent = 'Puntos: ' + score; comboEl.textContent = 'Combo ×' + combo; }
+  /* ========================= HUD ========================= */
+  function updateHUD(){
+    scoreEl.textContent = 'Puntos: ' + score;
+    comboEl.textContent = 'Combo ×' + combo;
+  }
+  function renderLives(){
+    heartsEl.innerHTML = '';
+    for (var i=0;i<lives;i++){
+      var h = document.createElement('div');
+      h.className = 'heart';
+      heartsEl.appendChild(h);
+    }
+  }
+  function loseLife(){
+    if (lives <= 0) return;
+    var idxToRemove = lives - 1;
+    var heart = heartsEl.children[idxToRemove];
+    if (heart){
+      heart.classList.add('pop');
+      setTimeout(function(){
+        lives--;
+        renderLives();
+      }, 420);
+    } else {
+      lives--;
+      renderLives();
+    }
+  }
 
-  /* ===== Inicio / fin ===== */
+  /* ========================= Tabla de récords local (Top 5) ========================= */
+  function loadScores(){
+    try{
+      var raw = localStorage.getItem(SCORES_KEY);
+      var arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) arr = [];
+      return arr;
+    } catch(e){ return []; }
+  }
+  function saveScore(value){
+    var arr = loadScores();
+    arr.push({ score:value, ts: Date.now() });
+    arr.sort(function(a,b){ return b.score - a.score || (a.ts - b.ts); }); // mayor primero; desempata por fecha
+    if (arr.length > 5) arr = arr.slice(0,5);
+    localStorage.setItem(SCORES_KEY, JSON.stringify(arr));
+    // actualiza el "best" simple también
+    var prev = +localStorage.getItem(RECORD_KEY) || 0;
+    if (value > prev) localStorage.setItem(RECORD_KEY, value);
+    bestEl.textContent = localStorage.getItem(RECORD_KEY);
+    return arr;
+  }
+  function renderScoresList(arr){
+    if (!arr || arr.length===0){
+      recordsBox.innerHTML = '<div class="records"><h3>Récords</h3><p>Aún no hay puntuaciones guardadas.</p></div>';
+      return;
+    }
+    var html = '<div class="records"><h3>Récords</h3><ol>';
+    for (var i=0;i<arr.length;i++){
+      var s = arr[i];
+      var d = new Date(s.ts);
+      var dateStr = d.toLocaleDateString()+' '+d.toLocaleTimeString();
+      html += '<li><strong>'+s.score+'</strong> <small>('+dateStr+')</small></li>';
+    }
+    html += '</ol></div>';
+    recordsBox.innerHTML = html;
+  }
+
+  /* ========================= Inicio / fin ========================= */
   function startGame(){
     score=0; combo=1; comboTimer=0; lives=3;
+    renderLives();
     items.length=0;
     world.time=0; spawn.next=0; spawn.rateMs=800;
     overlay.style.display='none';
@@ -120,9 +225,10 @@
 
   function endGame(){
     world.running=false;
-    var prev = +localStorage.getItem(RECORD_KEY) || 0;
-    if (score > prev) localStorage.setItem(RECORD_KEY, score);
-    bestEl.textContent = localStorage.getItem(RECORD_KEY);
+    // guarda puntuación y reconstruye tabla
+    var table = saveScore(score);
+    renderScoresList(table);
+
     document.querySelector('#overlay .card h2').textContent = '¡Fin de la partida!';
     document.querySelector('#overlay .card p').innerHTML =
       'Puntuación: <strong>'+score+'</strong>. Récord: <strong>'+bestEl.textContent+'</strong>.<br/>'+
@@ -130,20 +236,17 @@
     overlay.style.display='flex';
   }
 
-  /* ===== Aparición (con límite de avispas) ===== */
-  var MAX_WASPS = 6;
-  var WASP_BASE_PROB = 0.10;
-  var WASP_MAX_PROB  = 0.40;
+  /* ========================= Aparición (usa CURVA de dificultad) ========================= */
   function currentWaspProb(){
-    var t = Math.min(1, world.time / world.duration);
-    return WASP_BASE_PROB + (WASP_MAX_PROB - WASP_BASE_PROB) * t;
+    var t = Math.min(1, world.time / world.duration);               // progreso [0..1]
+    return DIFFICULTY.WASP_BASE_PROB + (DIFFICULTY.WASP_MAX_PROB - DIFFICULTY.WASP_BASE_PROB) * t;
   }
   function countWasps(){ var c=0; for (var i=0;i<items.length;i++){ if (items[i].type==='wasp') c++; } return c; }
 
   function spawnItem(forceType){
     var type;
     var probWasp = currentWaspProb();
-    var canSpawnWasp = countWasps() < MAX_WASPS;
+    var canSpawnWasp = countWasps() < DIFFICULTY.MAX_WASPS;
     type = forceType ? forceType : ((Math.random() < probWasp && canSpawnWasp) ? 'wasp' : 'good');
 
     var size = (type==='wasp' ? 28 : 32);
@@ -161,7 +264,7 @@
     });
   }
 
-  /* ===== Update ===== */
+  /* ========================= Update ========================= */
   function update(dt){
     world.time += dt;
     if (world.time >= world.duration || lives<=0){ endGame(); return; }
@@ -173,9 +276,7 @@
       spawn.next = spawn.rateMs;
     }
 
-    /* === Movimiento SIN vibración ===
-       - Dead-zone real: si |dx| < 1 px, NO movemos ni cambiamos facing.
-       - Posiciones enteras (Math.round). */
+    /* Movimiento sin vibración (dead-zone y enteros) */
     var dx = player.targetX - player.x;
     if (Math.abs(dx) >= 1){
       var dir = dx > 0 ? 1 : -1;
@@ -184,19 +285,20 @@
       if (player.x < player.w/2) player.x = player.w/2;
       if (player.x > world.w - player.w/2) player.x = world.w - player.w/2;
     }
-    // Si está dentro del dead-zone, NO tocamos player.x ni facing
+    // si |dx|<1, no tocamos player.x ni facing
 
     // Caída / colisiones
     for (var i=items.length-1;i>=0;i--){
       var it = items[i];
-      var fallBoost = 1 + (world.time/world.duration)*0.55;
+      var fallBoost = 1 + (world.time/world.duration)*0.55; // ligera aceleración con el tiempo
       it.y += (it.vy * dt / 1000) * fallBoost;
-      it.rot += 0.003 * dt; // rotación más lenta
+      it.rot += 0.003 * dt; // rotación lenta para apreciar el icono
 
       // Colisión con jugador
       if (rectsOverlap(player.x-player.w/2, player.y, player.w, player.h, it.x-it.size/2, it.y-it.size/2, it.size, it.size)){
         if (it.type==='wasp'){
-          lives--; combo=1; comboTimer=0; items.splice(i,1);
+          loseLife(); // animación + descuento
+          combo=1; comboTimer=0; items.splice(i,1);
           flash('#ffebee');
         } else {
           var base = 20;
@@ -218,7 +320,7 @@
     if (comboTimer > 0){ comboTimer -= dt; if (comboTimer <= 0){ comboTimer=0; combo=1; } }
   }
 
-  /* ===== Draw ===== */
+  /* ========================= Draw ========================= */
   function draw(){
     ctx.clearRect(0,0,world.w, world.h);
     drawBackground();
@@ -233,7 +335,7 @@
       ctx.restore();
     }
 
-    // Jugador (dibujado en enteros; sin vibración)
+    // Jugador (enteros; sin vibración)
     var sx = Math.round(player.x - player.w/2), sy = Math.round(player.y);
     ctx.save();
     if (player.facing < 0){ ctx.translate(player.x, sy); ctx.scale(-1,1); ctx.translate(-player.x, -sy); }
@@ -259,7 +361,7 @@
     requestAnimationFrame(loop);
   }
 
-  /* ===== Fondo ===== */
+  /* ========================= Fondo ========================= */
   function drawBackground(){
     // Cielo (gradiente)
     var skyGrad = ctx.createLinearGradient(0,0,0,world.h*0.70);
@@ -299,7 +401,7 @@
     ctx.fill();
   }
 
-  /* ===== Iconos ===== */
+  /* ========================= Iconos ========================= */
   function drawGoodIcon(s, imgIndex){
     var img = (imgIndex>=0 && imgIndex<GOOD_ICONS.length) ? GOOD_ICONS[imgIndex] : null;
     if (img && img.complete && img.naturalWidth && img.naturalWidth>0){
@@ -327,7 +429,7 @@
     ctx.moveTo(s/2, 0); ctx.lineTo(s/2+8, 0); ctx.lineTo(s/2, 6); ctx.closePath(); ctx.fill();
   }
 
-  /* ===== Utils ===== */
+  /* ========================= Utils ========================= */
   function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh){
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
@@ -341,7 +443,7 @@
     ctx.fill();
   }
 
-  /* ===== Input ===== */
+  /* ========================= Input ========================= */
   function setTargetFromEvent(ev){
     var rect = canvas.getBoundingClientRect();
     var x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
@@ -370,7 +472,7 @@
         var nx2 = Math.round(player.x + 12);
         player.targetX = Math.min(world.w - player.w/2, nx2);
       }
-      // si no se pulsa nada, NO tocamos targetX ⇒ el jugador queda completamente parado
+      // sin pulsación, no tocamos targetX → el jugador queda completamente parado
     }
     requestAnimationFrame(btnMoveLoop);
   })();
@@ -392,6 +494,8 @@
     powerBtn.disabled = true;
   });
 
+  // Mostrar tabla de récords al abrir overlay (por si entra sin jugar)
+  renderScoresList(loadScores());
   // Inicio
   overlay.style.display='flex';
   startBtn.addEventListener('click', startGame);
@@ -415,4 +519,3 @@
 </script>
 </body>
 </html>
-
