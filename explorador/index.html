@@ -78,7 +78,6 @@
   <div class="card">
     <h2>Caza de hojas</h2>
     <p>Arrastra para moverte y atrapa tus ítems favoritos. Evita las <strong>avispas</strong>. Tienes 3 corazones y una <strong>Ráfaga</strong> que limpia avispas.</p>
-    <div class="cfg">Dificultad (editable arriba en el código): <code>MAX_WASPS</code>, <code>WASP_BASE_PROB</code>, <code>WASP_MAX_PROB</code>, <code>SPAWN_MIN_RATE</code>, <code>SPAWN_ACCEL</code>.</div>
     <div class="records" id="recordsBox" aria-live="polite"></div>
     <button class="btn" id="start">▶️ Empezar</button>
   </div>
@@ -91,7 +90,7 @@
   var DIFFICULTY = {
     MAX_WASPS: 6,        // nº máximo de avispas simultáneas
     WASP_BASE_PROB: 0.10,// probabilidad inicial de avispa por spawn
-    WASP_MAX_PROB: 0.40, // probabilidad máxima al final de la partida
+    WASP_MAX_PROB: 0.50, // probabilidad máxima al final de la partida
     SPAWN_MIN_RATE: 360, // mínimo intervalo de spawn (ms)
     SPAWN_ACCEL: 0.995   // aceleración del ritmo de aparición en cada spawn
   };
@@ -136,9 +135,9 @@
   /* ========================= Tus iconos PNG (ajusta rutas exactas) ========================= */
   var ICON_IMG_SRC = [
     'assets/gato.png',
-    'assets/icons/mueble.png',
-    'assets/icons/fruta.png',
-    'assets/icons/pokeball.png'
+    'assets/mueble.png',
+    'assets/fruta.png',
+    'assets/pokeball.png'
   ];
   var GOOD_ICONS = ICON_IMG_SRC.map(function(src){ var im=new Image(); im.src=src; return im; });
 
@@ -519,3 +518,4 @@
 </script>
 </body>
 </html>
+
