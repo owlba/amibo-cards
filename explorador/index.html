@@ -44,8 +44,6 @@
     .records h3 { margin:10px 0 6px; }
     .records ol { margin:0; padding-left:22px; }
     .records small { color:#607d8b; }
-    .cfg { margin:8px auto; font-size:.9rem; color:#455a64; }
-    .cfg code { background:#eef2f7; padding:2px 6px; border-radius:8px; }
   </style>
 </head>
 <body>
@@ -85,16 +83,6 @@
 
 <script>
 (function(){
-  /* ========================= Configuración de dificultad (CURVA) =========================
-     - Edita estos valores para afinar el reto sin tocar el resto del código. */
-  var DIFFICULTY = {
-    MAX_WASPS: 6,        // nº máximo de avispas simultáneas
-    WASP_BASE_PROB: 0.10,// probabilidad inicial de avispa por spawn
-    WASP_MAX_PROB: 0.50, // probabilidad máxima al final de la partida
-    SPAWN_MIN_RATE: 360, // mínimo intervalo de spawn (ms)
-    SPAWN_ACCEL: 0.995   // aceleración del ritmo de aparición en cada spawn
-  };
-
   /* ========================= Canvas ========================= */
   var DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
   var canvas = document.getElementById('game');
@@ -118,7 +106,7 @@
   var recordsBox = document.getElementById('recordsBox');
 
   var RECORD_KEY = 'bestScore_explorador';
-  var SCORES_KEY = 'scores_explorador_top5'; // tabla local
+  var SCORES_KEY = 'scores_explorador_top5'; // tabla local Top 5
   var best = +localStorage.getItem(RECORD_KEY) || 0;
   bestEl.textContent = best;
 
@@ -129,7 +117,7 @@
 
   /* ========================= Estado ========================= */
   var items = []; // objetos que caen
-  var spawn = { next: 0, rateMs: 800, accel: DIFFICULTY.SPAWN_ACCEL, minRate: DIFFICULTY.SPAWN_MIN_RATE };
+  var spawn = { next: 0, rateMs: 800, accel: 0.995, minRate: 360 }; // valores fijos (sin curva editable)
   var score = 0, combo = 1, comboTimer = 0, lives = 3;
 
   /* ========================= Tus iconos PNG (ajusta rutas exactas) ========================= */
@@ -185,10 +173,9 @@
   function saveScore(value){
     var arr = loadScores();
     arr.push({ score:value, ts: Date.now() });
-    arr.sort(function(a,b){ return b.score - a.score || (a.ts - b.ts); }); // mayor primero; desempata por fecha
+    arr.sort(function(a,b){ return b.score - a.score || (a.ts - b.ts); });
     if (arr.length > 5) arr = arr.slice(0,5);
     localStorage.setItem(SCORES_KEY, JSON.stringify(arr));
-    // actualiza el "best" simple también
     var prev = +localStorage.getItem(RECORD_KEY) || 0;
     if (value > prev) localStorage.setItem(RECORD_KEY, value);
     bestEl.textContent = localStorage.getItem(RECORD_KEY);
@@ -224,10 +211,8 @@
 
   function endGame(){
     world.running=false;
-    // guarda puntuación y reconstruye tabla
     var table = saveScore(score);
     renderScoresList(table);
-
     document.querySelector('#overlay .card h2').textContent = '¡Fin de la partida!';
     document.querySelector('#overlay .card p').innerHTML =
       'Puntuación: <strong>'+score+'</strong>. Récord: <strong>'+bestEl.textContent+'</strong>.<br/>'+
@@ -235,17 +220,20 @@
     overlay.style.display='flex';
   }
 
-  /* ========================= Aparición (usa CURVA de dificultad) ========================= */
+  /* ========================= Aparición (parámetros fijos) ========================= */
+  var MAX_WASPS = 6;
+  var WASP_BASE_PROB = 0.10;
+  var WASP_MAX_PROB  = 0.40;
   function currentWaspProb(){
-    var t = Math.min(1, world.time / world.duration);               // progreso [0..1]
-    return DIFFICULTY.WASP_BASE_PROB + (DIFFICULTY.WASP_MAX_PROB - DIFFICULTY.WASP_BASE_PROB) * t;
+    var t = Math.min(1, world.time / world.duration); // progresión interna, sin configuración externa
+    return WASP_BASE_PROB + (WASP_MAX_PROB - WASP_BASE_PROB) * t;
   }
   function countWasps(){ var c=0; for (var i=0;i<items.length;i++){ if (items[i].type==='wasp') c++; } return c; }
 
   function spawnItem(forceType){
     var type;
     var probWasp = currentWaspProb();
-    var canSpawnWasp = countWasps() < DIFFICULTY.MAX_WASPS;
+    var canSpawnWasp = countWasps() < MAX_WASPS;
     type = forceType ? forceType : ((Math.random() < probWasp && canSpawnWasp) ? 'wasp' : 'good');
 
     var size = (type==='wasp' ? 28 : 32);
@@ -275,7 +263,7 @@
       spawn.next = spawn.rateMs;
     }
 
-    /* Movimiento sin vibración (dead-zone y enteros) */
+    /* Movimiento sin vibración */
     var dx = player.targetX - player.x;
     if (Math.abs(dx) >= 1){
       var dir = dx > 0 ? 1 : -1;
@@ -284,19 +272,18 @@
       if (player.x < player.w/2) player.x = player.w/2;
       if (player.x > world.w - player.w/2) player.x = world.w - player.w/2;
     }
-    // si |dx|<1, no tocamos player.x ni facing
 
     // Caída / colisiones
     for (var i=items.length-1;i>=0;i--){
       var it = items[i];
-      var fallBoost = 1 + (world.time/world.duration)*0.55; // ligera aceleración con el tiempo
+      var fallBoost = 1 + (world.time/world.duration)*0.55;
       it.y += (it.vy * dt / 1000) * fallBoost;
-      it.rot += 0.003 * dt; // rotación lenta para apreciar el icono
+      it.rot += 0.003 * dt; // rotación lenta
 
       // Colisión con jugador
       if (rectsOverlap(player.x-player.w/2, player.y, player.w, player.h, it.x-it.size/2, it.y-it.size/2, it.size, it.size)){
         if (it.type==='wasp'){
-          loseLife(); // animación + descuento
+          loseLife();
           combo=1; comboTimer=0; items.splice(i,1);
           flash('#ffebee');
         } else {
@@ -518,4 +505,3 @@
 </script>
 </body>
 </html>
-
