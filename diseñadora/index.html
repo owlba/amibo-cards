@@ -39,13 +39,13 @@
     #hint[disabled]{filter:grayscale(.8);opacity:.7}
     #overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35)}
     #overlay .cardBox{width:min(520px,92vw);background:#fff;color:#0f172a;padding:18px;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
-    footer{width:var(--gridW);margin:6px auto 22px;color:#555;font-size:.92rem;text-align:center}
+    footer{width:var(--gridW);margin:6px auto 12px;color:#555;font-size:.92rem;text-align:center}
     @media (max-width:420px){ header{font-size:14px} .front img{width:76%;height:76%;} }
   </style>
 </head>
 <body>
   <header>
-    <img id="avatar" src="/amibo-cards/diseñadora/assets/Diseñadora.png" alt="Avatar diseñadora">
+    <img id="avatar" src="/amibo-cards/diseñadora/assets/Diseñadora.png" alt="Avatar de la carta diseñadora">
     <div class="stat">
       <span class="badge">⌛ <strong id="time">00:00</strong></span>
       <span class="badge">🎯 Movimientos: <strong id="moves">0</strong></span>
@@ -64,6 +64,20 @@
   <footer>
     Récord: <span id="best">—</span> · Carta: <strong>diseñadora</strong>
   </footer>
+
+  <!-- 🏆 Tabla de puntuaciones (Top 10) — colocar justo debajo del footer -->
+  <section id="scoreboard" aria-labelledby="scoreboard-title" style="width:var(--gridW);margin:0 auto 16px;">
+    <h3 id="scoreboard-title" style="margin:8px 0;color:#2b2b2b;font-weight:700;">🏆 Mejores puntuaciones</h3>
+    <div style="background:#fff;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:10px 12px;color:#0f172a;font-size:.95rem;">
+      <ol id="score-list" style="margin:0;padding-left:20px;">
+        <!-- Se rellena por JS -->
+      </ol>
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <button class="btn" id="scores-refresh" title="Actualizar tabla">🔁 Actualizar</button>
+        <button class="btn" id="scores-clear" title="Borrar tabla">🗑️ Borrar</button>
+      </div>
+    </div>
+  </section>
 
   <div id="overlay" role="dialog" aria-modal="true">
     <div class="cardBox">
@@ -88,6 +102,62 @@
 
   const BEST_KEY = 'memoryRecord_disenadora_png';
 
+  /* ======= 🏆 Tabla de puntuaciones (Top 10) ======= */
+  const SCORE_KEY = 'memoryScores_disenadora';
+
+  function fmt(ms){
+    const s = Math.floor(ms/1000);
+    const mm = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    return `${mm}:${ss}`;
+  }
+
+  function loadScores(){
+    try {
+      const raw = localStorage.getItem(SCORE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }
+
+  function saveScores(list){
+    try { localStorage.setItem(SCORE_KEY, JSON.stringify(list)); } catch {}
+  }
+
+  function addScore({ ms, moves, when = Date.now() }){
+    const list = loadScores();
+    list.push({ ms, moves, when });
+    list.sort((a,b) => (a.ms - b.ms) || (a.moves - b.moves) || (a.when - b.when));
+    saveScores(list.slice(0, 10)); // Top 10
+  }
+
+  function renderScores(){
+    const ol = document.getElementById('score-list');
+    if (!ol) return;
+    const list = loadScores();
+    if (!list.length){
+      ol.innerHTML = '<li>No hay puntuaciones todavía. ¡Juega y serás la primera en la tabla!</li>';
+      return;
+    }
+    ol.innerHTML = list.map((r, i) => {
+      const date = new Date(r.when);
+      const label = `${fmt(r.ms)} · ${r.moves} mov · ${date.toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit'})}`;
+      return `<li><strong>#${i+1}</strong> — ${label}</li>`;
+    }).join('');
+  }
+
+  (function wireScoreboard(){
+    const btnRefresh = document.getElementById('scores-refresh');
+    const btnClear   = document.getElementById('scores-clear');
+    if (btnRefresh) btnRefresh.addEventListener('click', renderScores);
+    if (btnClear)   btnClear.addEventListener('click', () => {
+      localStorage.removeItem(SCORE_KEY);
+      renderScores();
+    });
+    renderScores(); // Render inicial
+  })();
+  /* ======= Fin bloque tabla de puntuaciones ======= */
+
+  // Rutas de imágenes reales (plano y vibrante)
   const IMG = {
     libros: 'assets/libros.png',
     tijeras: 'assets/tijeras.png',
@@ -98,7 +168,7 @@
     clip: 'assets/clip.png',
     imperdible: 'assets/imperdible.png'
   };
-  const PAIRS = Object.keys(IMG);
+  const PAIRS = Object.keys(IMG); // 8 parejas
 
   let deck = [], open = [], moves = 0, pairs = 0, running=false, paused=false, startTime=0, timerId=null;
 
@@ -166,6 +236,8 @@
   function endGame(){
     running=false;
     const total=performance.now()-startTime;
+
+    // Guarda y muestra récord personal (tu lógica original)
     const recordStr=`${formatTime(total)} | ${moves} mov`;
     const prev=localStorage.getItem(BEST_KEY);
     if (!prev){
@@ -177,28 +249,37 @@
       if (total<prevMs || (total===prevMs && moves<prevMov)){ localStorage.setItem(BEST_KEY, recordStr); }
     }
     bestEl.textContent=localStorage.getItem(BEST_KEY);
+
+    // 🏆 Añadir puntuación al Top 10 y refrescar tabla
+    addScore({ ms: total, moves });
+    renderScores();
+
+    // Overlay de fin
     document.getElementById('ov-title').textContent='¡Completado!';
     document.getElementById('ov-desc').innerHTML=`Tiempo: <strong>${formatTime(total)}</strong> · Movimientos: <strong>${moves}</strong><br>Récord: <strong>${bestEl.textContent}</strong>`;
     overlay.style.display='flex';
   }
 
-  pauseBtn.addEventListener('click', ()=>{ if (!running) return; paused=!paused; pauseBtn.textContent = paused ? '▶️ Reanudar' : '⏸️ Pausa'; });
-  restartBtn.addEventListener('click', ()=>{ running=false; overlay.style.display='flex'; });
+  // Pausa
+  pauseBtn.addEventListener('click', () =>{ if (!running) return; paused=!paused; pauseBtn.textContent = paused ? '▶️ Reanudar' : '⏸️ Pausa'; });
 
+  // Reiniciar
+  restartBtn.addEventListener('click', () =>{ running=false; overlay.style.display='flex'; });
+
+  // Vista rápida (una vez)
   let hintUsed=false;
-  hintBtn.addEventListener('click', ()=>{
+  hintBtn.addEventListener('click', () =>{
     if (!running || paused || hintUsed) return;
     hintUsed=true; hintBtn.disabled=true;
     deck.forEach(c=>c.el.classList.add('flipped'));
     setTimeout(()=>{ deck.filter(c=>!c.matched).forEach(c=>c.el.classList.remove('flipped')); }, 1200);
   });
 
+  // Inicio
   overlay.style.display='flex';
   startBtn.addEventListener('click', startGame);
 
 })();
 </script>
 </body>
-</html>
-
 
