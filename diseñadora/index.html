@@ -45,15 +45,15 @@
 </head>
 <body>
   <header>
-    assets/diseñadora.png
+    <img id="avatar" src="/amibo-cards/assets/dise%C3%B1adora.png" alt="Avatar diseñadora">
     <div class="stat">
       <span class="badge">⌛ <strong id="time">00:00</strong></span>
       <span class="badge">🎯 Movimientos: <strong id="moves">0</strong></span>
-      <span class="badge">✅ Parejas: <strong id="pairs">0</strong>/8</span>
+      <span class="badge">✅ Parejas: <strong id="pairs">0</strong></span>/8
     </div>
   </header>
 
-  <div id="grid" aria-label="Memory Arts & Crafts"></div>
+  <div id="grid" aria-label="Memory Arts &amp; Crafts"></div>
 
   <div id="panel">
     <button class="btn" id="hint" title="Vista rápida — revela todo 1,2 s (1 uso)">👀 Vista rápida</button>
@@ -67,7 +67,7 @@
 
   <div id="overlay" role="dialog" aria-modal="true">
     <div class="cardBox">
-      <h2 id="ov-title">Memory Arts & Crafts</h2>
+      <h2 id="ov-title">Memory Arts &amp; Crafts</h2>
       <p id="ov-desc">Encuentra las parejas entre las cartas. La diseñadora tiene la habilidad <em>Vista rápida</em> (1 uso).</p>
       <button class="btn" id="start">▶️ Empezar</button>
     </div>
@@ -88,7 +88,6 @@
 
   const BEST_KEY = 'memoryRecord_disenadora_png';
 
-  // Rutas de imágenes reales (plano y vibrante)
   const IMG = {
     libros: 'assets/libros.png',
     tijeras: 'assets/tijeras.png',
@@ -99,7 +98,7 @@
     clip: 'assets/clip.png',
     imperdible: 'assets/imperdible.png'
   };
-  const PAIRS = Object.keys(IMG); // 8 parejas
+  const PAIRS = Object.keys(IMG);
 
   let deck = [], open = [], moves = 0, pairs = 0, running=false, paused=false, startTime=0, timerId=null;
 
@@ -128,7 +127,7 @@
       const back = document.createElement('div'); back.className='face back';
       inner.appendChild(front); inner.appendChild(back); cell.appendChild(inner);
       card.el = cell;
-      cell.addEventListener('click', ()=> flip(card));
+      cell.addEventListener('click', () => flip(card));
       grid.appendChild(cell);
     });
   }
@@ -183,13 +182,9 @@
     overlay.style.display='flex';
   }
 
-  // Pausa
   pauseBtn.addEventListener('click', ()=>{ if (!running) return; paused=!paused; pauseBtn.textContent = paused ? '▶️ Reanudar' : '⏸️ Pausa'; });
-
-  // Reiniciar
   restartBtn.addEventListener('click', ()=>{ running=false; overlay.style.display='flex'; });
 
-  // Vista rápida (una vez)
   let hintUsed=false;
   hintBtn.addEventListener('click', ()=>{
     if (!running || paused || hintUsed) return;
@@ -198,7 +193,6 @@
     setTimeout(()=>{ deck.filter(c=>!c.matched).forEach(c=>c.el.classList.remove('flipped')); }, 1200);
   });
 
-  // Inicio
   overlay.style.display='flex';
   startBtn.addEventListener('click', startGame);
 
@@ -206,5 +200,3 @@
 </script>
 </body>
 </html>
-
-
