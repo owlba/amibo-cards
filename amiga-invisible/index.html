@@ -51,6 +51,20 @@
     Carta: <strong>amiga invisible</strong>
   </footer>
 
+  <!-- 🏆 Tabla de puntuaciones (Top 10) — igual que en los otros juegos -->
+  <section id="scoreboard" aria-labelledby="scoreboard-title" style="width:var(--panelW);margin:0 auto 16px;">
+    <h3 id="scoreboard-title" style="margin:8px 0;color:#2b2b2b;font-weight:700;">🏆 Mejores puntuaciones</h3>
+    <div style="background:#fff;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:10px 12px;color:#0f172a;font-size:.95rem;">
+      <ol id="score-list" style="margin:0;padding-left:20px;">
+        <!-- Se rellena por JS -->
+      </ol>
+      <div style="display:flex;gap:10px;margin-top:8px;">
+        <button class="btn" id="scores-refresh" title="Actualizar tabla">🔁 Actualizar</button>
+        <button class="btn" id="scores-clear" title="Borrar tabla">🗑️ Borrar</button>
+      </div>
+    </div>
+  </section>
+
   <div id="overlay" role="dialog" aria-modal="true">
     <div class="card">
       <h2>Mini‑crafting</h2>
@@ -89,6 +103,48 @@
 
   var RECORD_KEY = 'crafting_best_amiga';
   bestEl.textContent = +localStorage.getItem(RECORD_KEY) || 0;
+
+  /* ======= 🏆 Tabla de puntuaciones (Top 10) ======= */
+  var SCORE_KEY = 'crafting_scores_amiga'; // ranking igual que en los otros juegos
+
+  function fmt(ms){
+    var s = Math.floor(ms/1000);
+    var mm = String(Math.floor(s/60)).padStart(2,'0');
+    var ss = String(s%60).padStart(2,'0');
+    return mm+':'+ss;
+  }
+  function loadScores(){
+    try { var raw = localStorage.getItem(SCORE_KEY); return raw ? JSON.parse(raw) : []; }
+    catch(e){ return []; }
+  }
+  function saveScores(list){
+    try { localStorage.setItem(SCORE_KEY, JSON.stringify(list)); } catch(e){}
+  }
+  // Orden: mayor puntuación primero; desempate: menor tiempo
+  function addScore(entry){
+    var list = loadScores();
+    list.push(entry);
+    list.sort(function(a,b){ return (b.score - a.score) || (a.ms - b.ms) || (a.when - b.when); });
+    saveScores(list.slice(0,10));
+  }
+  function renderScores(){
+    var ol = document.getElementById('score-list'); if (!ol) return;
+    var list = loadScores();
+    if (!list.length){ ol.innerHTML = '<li>No hay puntuaciones todavía. ¡Juega y entrarás en la tabla!</li>'; return; }
+    ol.innerHTML = list.map(function(r,i){
+      var d = new Date(r.when);
+      var when = d.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit'});
+      return '<li><strong>#'+(i+1)+'</strong> — '+r.score+' pts · '+fmt(r.ms)+' · '+when+'</li>';
+    }).join('');
+  }
+  (function wireScoreboard(){
+    var btnRefresh = document.getElementById('scores-refresh');
+    var btnClear   = document.getElementById('scores-clear');
+    if (btnRefresh) btnRefresh.addEventListener('click', renderScores);
+    if (btnClear)   btnClear.addEventListener('click', function(){ localStorage.removeItem(SCORE_KEY); renderScores(); });
+    renderScores();
+  })();
+  /* ======= Fin ranking ======= */
 
   /* ===================== Paletas por receta (cielo/suelo) ===================== */
   var THEMES = {
@@ -207,12 +263,15 @@
     }
   }
 
-  // Crea un item para la bancada con coordenadas según índice (cuadrícula 3x2, más espaciada)
+  // Crea un item para la bancada con coordenadas según índice (cuadrícula 3x2), centrado en pantalla
   function makeBenchItem(key, idx){
-    var col = idx % 3;
-    var row = Math.floor(idx / 3);
-    var x = 60 + col * 120;              // más separación horizontal
-    var y = 120 + row * 130;             // más separación vertical
+    var cols = 3;
+    var col = idx % cols;
+    var row = Math.floor(idx / cols);
+    var spacingX = 120; // separación horizontal entre columnas
+    var startX = world.w/2 - ((cols-1)*spacingX)/2; // centrado respecto al canvas
+    var x = startX + col * spacingX;
+    var y = 120 + row * 130;             // separación vertical
     return { key:key, x:x, y:y, s:56, dragging:false, dx:0, dy:0, placed:false };
   }
 
@@ -257,6 +316,11 @@
     document.querySelector('#overlay .card p').innerHTML =
       'Puntos: <strong>'+score+'</strong> · Récord: <strong>'+bestEl.textContent+'</strong><br>'+
       'Receta actual: <strong>'+(currentRecipe ? currentRecipe.name : '—')+'</strong>' + extra;
+
+    // 🏆 Añadir puntuación al ranking y refrescar tabla (igual que en los otros juegos)
+    addScore({ score: score, ms: world.time, when: Date.now() });
+    renderScores();
+
     overlay.style.display='flex';
   }
 
@@ -415,6 +479,9 @@
             spawnBenchFor(currentRecipe);
             buildSlots(currentRecipe);
           }
+        } else {
+          // ❌ Penalización por herramienta incorrecta soltada en la caja
+          score = Math.max(0, score - 25); // resta 25 puntos (evita negativos)
         }
         break;
       }
@@ -463,5 +530,3 @@
 })();
 </script>
 </body>
-</html>
-
