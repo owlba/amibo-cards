@@ -234,32 +234,31 @@
     return arr;
   }
 
-  /* ✅ SIN REPETIDOS: 3 necesarios + 3 distractores únicos y distintos de los necesarios */
+  /* ✅ Aleatoriza las posiciones de los 3 necesarios y 3 distractores */
   function spawnBenchFor(recipe){
+    // Limpiar bancada
     bench.items = [];
 
-    var needed = recipe.need.slice();                       // 3 necesarios
-    var poolAll = ITEMS.map(function(it){ return it.key; }); // todos los ítems posibles
-
-    // Añadir necesarios primero (posiciones 0..2)
-    for (var i=0; i<needed.length; i++){
-      bench.items.push(makeBenchItem(needed[i], bench.items.length));
-    }
-
-    // Construir conjunto de distractores posibles (excluye los necesarios)
+    // 1) Claves necesarias (3)
+    var needed = recipe.need.slice();
+    // 2) Pool total
+    var poolAll = ITEMS.map(function(it){ return it.key; });
+    // 3) Pool de distractores (excluye necesarios)
     var distractorPool = [];
     for (var p=0; p<poolAll.length; p++){
       var key = poolAll[p];
-      if (needed.indexOf(key)===-1) distractorPool.push(key);
+      if (needed.indexOf(key) === -1) distractorPool.push(key);
     }
-
-    // Elegir 3 distractores únicos sin repetidos
+    // 4) Elegir 3 distractores únicos
     shuffle(distractorPool);
     var distractors = distractorPool.slice(0, 3);
-
-    // Añadir distractores (posiciones 3..5)
-    for (var d=0; d<distractors.length; d++){
-      bench.items.push(makeBenchItem(distractors[d], bench.items.length));
+    // 5) Unir (3 necesarios + 3 distractores)
+    var keys = needed.concat(distractors);
+    // 6) Barajar el conjunto para que los índices (y por tanto las posiciones) sean aleatorios
+    shuffle(keys);
+    // 7) Crear los 6 ítems posicionados por índice ya barajado (3x2 centrados)
+    for (var i=0; i<keys.length; i++){
+      bench.items.push(makeBenchItem(keys[i], i));
     }
   }
 
@@ -530,3 +529,4 @@
 })();
 </script>
 </body>
+</html>
